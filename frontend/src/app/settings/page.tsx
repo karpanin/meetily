@@ -37,8 +37,8 @@ export default function SettingsPage() {
         if (config) {
           console.log('Loaded saved transcript config:', config);
           setTranscriptModelConfig({
-            provider: config.provider || 'localWhisper',
-            model: config.model || 'large-v3',
+            provider: config.provider || 'openaiCompatible',
+            model: config.model || 'whisper-1',
             openaiEndpoint: config.openaiEndpoint || null,
             apiKey: config.apiKey || null
           });

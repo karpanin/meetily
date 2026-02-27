@@ -170,35 +170,35 @@ pub async fn complete_onboarding<R: Runtime>(
     state: tauri::State<'_, AppState>,
     model: String,
 ) -> Result<(), String> {
-    info!("Completing onboarding with builtin-ai model: {}", model);
+    info!("Completing onboarding with remote model: {}", model);
 
     // Step 1: Save model configuration to SQLite database FIRST
     let pool = state.db_manager.pool();
 
-    // Onboarding always uses builtin-ai (local LLM)
+    // Remote-only: use custom-openai provider for summaries
     if let Err(e) = SettingsRepository::save_model_config(
         pool,
-        "builtin-ai",
+        "custom-openai",
         &model,
         "large-v3",
         None,
     ).await {
-        error!("Failed to save builtin-ai model config: {}", e);
-        return Err(format!("Failed to save builtin-ai model config: {}", e));
+        error!("Failed to save summary model config: {}", e);
+        return Err(format!("Failed to save summary model config: {}", e));
     }
-    info!("Saved builtin-ai model config: model={}", model);
+    info!("Saved summary model config: provider=custom-openai, model={}", model);
 
-    // Save transcription model config (parakeet provider) - always parakeet
+    // Remote-only transcription provider
     if let Err(e) = SettingsRepository::save_transcript_config(
         pool,
-        "parakeet",
-        "parakeet-tdt-0.6b-v3-int8",
+        "openaiCompatible",
+        "whisper-1",
         None,
     ).await {
         error!("Failed to save transcription model config: {}", e);
         return Err(format!("Failed to save transcription model config: {}", e));
     }
-    info!("Saved transcription model config: provider=parakeet, model=parakeet-tdt-0.6b-v3-int8");
+    info!("Saved transcription model config: provider=openaiCompatible, model=whisper-1");
 
     // Step 2: Only NOW mark onboarding as complete (after DB operations succeed)
     let mut status = load_onboarding_status(&app)
@@ -207,7 +207,7 @@ pub async fn complete_onboarding<R: Runtime>(
 
     status.completed = true;
     status.current_step = 4; // Max step (4 on macOS with permissions, 3 on other platforms)
-    status.model_status.parakeet = "downloaded".to_string();
+    status.model_status.parakeet = "downloaded".to_string(); // kept for backward-compatible UI state
     status.model_status.summary = "downloaded".to_string();
 
     save_onboarding_status(&app, &status)

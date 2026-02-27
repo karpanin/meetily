@@ -94,12 +94,12 @@ Whether you're a defense consultant, enterprise executive, legal professional, o
 
 ## Features
 
-- **Local First:** All processing is done on your machine. No data ever leaves your computer.
+- **Privacy First:** You control where processing happens by using your own API infrastructure.
 - **Real-time Transcription:** Get a live transcript of your meeting as it happens.
 - **AI-Powered Summaries:** Generate summaries of your meetings using powerful language models.
 - **Multi-Platform:** Works on macOS, Windows, and Linux.
 - **Open Source:** Meetily is open source and free to use.
-- **Flexible AI Provider Support:** Choose from Ollama (local), Claude, Groq, OpenRouter, or use your own OpenAI-compatible endpoint.
+- **Flexible AI Provider Support:** Use OpenAI-compatible endpoints for transcription and your preferred LLM provider for summaries.
 
 ## Installation
 
@@ -133,9 +133,9 @@ pnpm install
 
 ## Key Features in Action
 
-### 🎯 Local Transcription
+### 🎯 Remote API Transcription
 
-Transcribe meetings entirely on your device using **Whisper** or **Parakeet** models. No cloud required.
+Transcribe meetings with your own OpenAI-compatible endpoint (self-hosted or managed).
 
 <p align="center">
     <img src="docs/home.png" width="650" style="border-radius: 10px;" alt="Meetily Demo" />

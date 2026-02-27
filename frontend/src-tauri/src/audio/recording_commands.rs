@@ -96,7 +96,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
         // (download progress is already shown in top-right toast)
         let _ = app.emit("transcription-error", serde_json::json!({
             "error": validation_error,
-            "userMessage": "Recording cannot start: Transcription model is still downloading. Please wait for the download to complete.",
+            "userMessage": "Recording cannot start: remote transcription endpoint is not configured or unavailable.",
             "actionable": false
         }));
 
@@ -266,6 +266,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                 let segment = crate::audio::recording_saver::TranscriptSegment {
                     id: format!("seg_{}", update.sequence_id),
                     text: update.text.clone(),
+                    speaker: update.speaker.clone(),
                     audio_start_time: update.audio_start_time,
                     audio_end_time: update.audio_end_time,
                     duration: update.duration,
@@ -339,7 +340,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
         // (download progress is already shown in top-right toast)
         let _ = app.emit("transcription-error", serde_json::json!({
             "error": validation_error,
-            "userMessage": "Recording cannot start: Transcription model is still downloading. Please wait for the download to complete.",
+            "userMessage": "Recording cannot start: remote transcription endpoint is not configured or unavailable.",
             "actionable": false
         }));
 
@@ -434,6 +435,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
                 let segment = crate::audio::recording_saver::TranscriptSegment {
                     id: format!("seg_{}", update.sequence_id),
                     text: update.text.clone(),
+                    speaker: update.speaker.clone(),
                     audio_start_time: update.audio_start_time,
                     audio_end_time: update.audio_end_time,
                     duration: update.duration,
@@ -604,17 +606,17 @@ pub async fn stop_recording<R: Runtime>(
         info!("ℹ️ No transcription task found to wait for");
     }
 
-    // Step 3: Now safely unload Whisper model after ALL chunks are processed
+    // Step 3: Remote-only build has no local model unload step
     let _ = app.emit(
         "recording-shutdown-progress",
         serde_json::json!({
             "stage": "unloading_model",
-            "message": "Unloading speech recognition model...",
+            "message": "Finalizing remote transcription...",
             "progress": 70
         }),
     );
 
-    info!("🧠 All transcript chunks processed. Now safely unloading transcription model...");
+    info!("🧠 All transcript chunks processed. Remote-only mode: skipping local model unload.");
 
     // Determine which provider was used and unload the appropriate model (with timeout)
     let config = match tokio::time::timeout(
@@ -640,56 +642,8 @@ pub async fn stop_recording<R: Runtime>(
     };
 
     match config.as_deref() {
-        Some("parakeet") => {
-            info!("🦜 Unloading Parakeet model...");
-            let engine_clone = {
-                let engine_guard = crate::parakeet_engine::commands::PARAKEET_ENGINE
-                    .lock()
-                    .unwrap();
-                engine_guard.as_ref().cloned()
-            };
-
-            if let Some(engine) = engine_clone {
-                let current_model = engine
-                    .get_current_model()
-                    .await
-                    .unwrap_or_else(|| "unknown".to_string());
-                info!("Current Parakeet model before unload: '{}'", current_model);
-
-                if engine.unload_model().await {
-                    info!("✅ Parakeet model '{}' unloaded successfully", current_model);
-                } else {
-                    warn!("⚠️ Failed to unload Parakeet model '{}'", current_model);
-                }
-            } else {
-                warn!("⚠️ No Parakeet engine found to unload model");
-            }
-        }
-        _ => {
-            // Default to Whisper
-            info!("🎤 Unloading Whisper model...");
-            let engine_clone = {
-                let engine_guard = crate::whisper_engine::commands::WHISPER_ENGINE
-                    .lock()
-                    .unwrap();
-                engine_guard.as_ref().cloned()
-            };
-
-            if let Some(engine) = engine_clone {
-                let current_model = engine
-                    .get_current_model()
-                    .await
-                    .unwrap_or_else(|| "unknown".to_string());
-                info!("Current Whisper model before unload: '{}'", current_model);
-
-                if engine.unload_model().await {
-                    info!("✅ Whisper model '{}' unloaded successfully", current_model);
-                } else {
-                    warn!("⚠️ Failed to unload Whisper model '{}'", current_model);
-                }
-            } else {
-                warn!("⚠️ No Whisper engine found to unload model");
-            }
+        Some("openaiCompatible") | _ => {
+            info!("Remote transcription provider used; no local model unload required");
         }
     }
 

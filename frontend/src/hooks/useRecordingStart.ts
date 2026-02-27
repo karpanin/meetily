@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { useTranscripts } from '@/contexts/TranscriptContext';
 import { useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { useConfig } from '@/contexts/ConfigContext';
@@ -49,50 +48,11 @@ export function useRecordingStart(
     return `Meeting ${day}_${month}_${year}_${hours}_${minutes}_${seconds}`;
   }, []);
 
-  // Check if Parakeet transcription model is ready
-  const checkParakeetReady = useCallback(async (): Promise<boolean> => {
-    try {
-      await invoke('parakeet_init');
-      const hasModels = await invoke<boolean>('parakeet_has_available_models');
-      return hasModels;
-    } catch (error) {
-      console.error('Failed to check Parakeet status:', error);
-      return false;
-    }
-  }, []);
-
-  // Check if any model is currently downloading
-  const checkIfModelDownloading = useCallback(async (): Promise<boolean> => {
-    try {
-      const models = await invoke<any[]>('parakeet_get_available_models');
-      const isDownloading = models.some(m =>
-        m.status && (
-          typeof m.status === 'object'
-            ? 'Downloading' in m.status
-            : m.status === 'Downloading'
-        )
-      );
-      return isDownloading;
-    } catch (error) {
-      console.error('Failed to check model download status:', error);
-      return false; // Default to not downloading (will show error + modal)
-    }
-  }, []);
-
-  // Check selected transcription provider readiness
+  // Remote-only build readiness check
   const checkSelectedProviderReady = useCallback(async (): Promise<{ ready: boolean; downloading: boolean }> => {
-    if (transcriptModelConfig.provider !== 'parakeet') {
-      return { ready: true, downloading: false };
-    }
-
-    const ready = await checkParakeetReady();
-    if (ready) {
-      return { ready: true, downloading: false };
-    }
-
-    const downloading = await checkIfModelDownloading();
-    return { ready: false, downloading };
-  }, [transcriptModelConfig.provider, checkParakeetReady, checkIfModelDownloading]);
+    const _provider = transcriptModelConfig.provider;
+    return { ready: true, downloading: false };
+  }, [transcriptModelConfig.provider]);
 
   // Handle manual recording start (from button click)
   const handleRecordingStart = useCallback(async () => {

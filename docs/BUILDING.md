@@ -2,6 +2,8 @@
 
 This guide provides detailed instructions for building Meetily from source on different operating systems.
 
+> Note: This branch is configured as `remote API only` for transcription. Local transcription models are disabled in the application build.
+
 <details>
 <summary>Linux</summary>
 
@@ -314,6 +316,6 @@ pnpm tauri:dev
 pnpm tauri:build
 ```
 
-By default, the application will be built with CPU-only processing. To enable GPU acceleration, see the [GPU Acceleration Guide](GPU_ACCELERATION.md).
+This build uses remote API transcription only (OpenAI-compatible endpoint). No local transcription model runtime is required.
 
 </details>

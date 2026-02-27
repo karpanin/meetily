@@ -5,13 +5,9 @@
 use super::provider::{TranscriptionError, TranscriptionProvider, TranscriptResult};
 use async_trait::async_trait;
 use reqwest::multipart::{Form, Part};
-use serde::Deserialize;
+use serde_json::Value;
+use std::collections::HashSet;
 use std::time::Duration;
-
-#[derive(Debug, Deserialize)]
-struct OpenAITranscriptionResponse {
-    text: String,
-}
 
 pub struct OpenAICompatibleProvider {
     endpoint: String,
@@ -75,6 +71,69 @@ impl OpenAICompatibleProvider {
 
         wav
     }
+
+    fn extract_text_and_speaker(payload: &Value) -> (String, Option<String>) {
+        let top_level_text = payload
+            .get("text")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_string();
+
+        let top_level_speaker = payload
+            .get("speaker")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned);
+
+        let segments = payload
+            .get("segments")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        let mut segment_text_parts: Vec<String> = Vec::new();
+        let mut speakers: HashSet<String> = HashSet::new();
+        let speaker_fields = ["speaker", "speaker_id", "speaker_label", "speaker_name"];
+
+        for segment in segments {
+            if let Some(seg_text) = segment.get("text").and_then(Value::as_str) {
+                let trimmed = seg_text.trim();
+                if !trimmed.is_empty() {
+                    segment_text_parts.push(trimmed.to_string());
+                }
+            }
+
+            for field in speaker_fields {
+                if let Some(value) = segment.get(field).and_then(Value::as_str) {
+                    let trimmed = value.trim();
+                    if !trimmed.is_empty() {
+                        speakers.insert(trimmed.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+
+        let final_text = if !top_level_text.is_empty() {
+            top_level_text
+        } else if !segment_text_parts.is_empty() {
+            segment_text_parts.join(" ")
+        } else {
+            String::new()
+        };
+
+        let final_speaker = if let Some(speaker) = top_level_speaker {
+            Some(speaker)
+        } else if speakers.len() == 1 {
+            speakers.into_iter().next()
+        } else {
+            None
+        };
+
+        (final_text, final_speaker)
+    }
 }
 
 #[async_trait]
@@ -92,37 +151,67 @@ impl TranscriptionProvider for OpenAICompatibleProvider {
         }
 
         let wav_bytes = Self::build_wav_bytes(&audio, 16000);
-        let audio_part = Part::bytes(wav_bytes)
-            .file_name("chunk.wav")
-            .mime_str("audio/wav")
-            .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))?;
+        let normalized_language = language.and_then(|lang| {
+            let normalized = lang.trim().to_string();
+            if normalized.is_empty() || normalized == "auto" || normalized == "auto-translate" {
+                None
+            } else {
+                Some(normalized)
+            }
+        });
 
-        let mut form = Form::new()
-            .part("file", audio_part)
-            .text("model", self.model.clone());
+        let send_request = |include_verbose_json: bool| {
+            let wav_bytes = wav_bytes.clone();
+            let normalized_language = normalized_language.clone();
+            async move {
+                let audio_part = Part::bytes(wav_bytes)
+                    .file_name("chunk.wav")
+                    .mime_str("audio/wav")
+                    .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))?;
 
-        if let Some(lang) = language {
-            let normalized = lang.trim();
-            if !normalized.is_empty() && normalized != "auto" && normalized != "auto-translate" {
-                form = form.text("language", normalized.to_string());
+                let mut form = Form::new()
+                    .part("file", audio_part)
+                    .text("model", self.model.clone());
+
+                if let Some(lang) = normalized_language {
+                    form = form.text("language", lang);
+                }
+                if include_verbose_json {
+                    form = form.text("response_format", "verbose_json");
+                }
+
+                let url = format!("{}/audio/transcriptions", self.endpoint);
+                let mut request = self
+                    .client
+                    .post(url)
+                    .timeout(Duration::from_secs(45))
+                    .multipart(form);
+
+                if let Some(api_key) = &self.api_key {
+                    request = request.bearer_auth(api_key);
+                }
+
+                request
+                    .send()
+                    .await
+                    .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))
+            }
+        };
+
+        let mut response = send_request(true).await?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+
+            if status.as_u16() == 400 || status.as_u16() == 422 {
+                response = send_request(false).await?;
+            } else {
+                return Err(TranscriptionError::EngineFailed(format!(
+                    "HTTP {}: {}",
+                    status, body
+                )));
             }
         }
-
-        let url = format!("{}/audio/transcriptions", self.endpoint);
-        let mut request = self
-            .client
-            .post(url)
-            .timeout(Duration::from_secs(45))
-            .multipart(form);
-
-        if let Some(api_key) = &self.api_key {
-            request = request.bearer_auth(api_key);
-        }
-
-        let response = request
-            .send()
-            .await
-            .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -134,14 +223,16 @@ impl TranscriptionProvider for OpenAICompatibleProvider {
         }
 
         let payload = response
-            .json::<OpenAITranscriptionResponse>()
+            .json::<Value>()
             .await
             .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))?;
+        let (text, speaker) = Self::extract_text_and_speaker(&payload);
 
         Ok(TranscriptResult {
-            text: payload.text.trim().to_string(),
+            text,
             confidence: None,
             is_partial: false,
+            speaker,
         })
     }
 

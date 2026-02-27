@@ -68,6 +68,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     id,
     timestamp,
     text,
+    speaker,
     confidence,
     isStreaming,
     showConfidence,
@@ -75,6 +76,7 @@ const TranscriptSegment = memo(function TranscriptSegment({
     id: string;
     timestamp: number;
     text: string;
+    speaker?: string;
     confidence?: number;
     isStreaming: boolean;
     showConfidence: boolean;
@@ -99,10 +101,16 @@ const TranscriptSegment = memo(function TranscriptSegment({
                 <div className="flex-1">
                     {isStreaming ? (
                         <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-2">
-                            <p className="text-base text-gray-800 leading-relaxed">{displayText}</p>
+                            <p className="text-base text-gray-800 leading-relaxed">
+                                {speaker && <span className="font-medium text-gray-600">{speaker}: </span>}
+                                {displayText}
+                            </p>
                         </div>
                     ) : (
-                        <p className="text-base text-gray-800 leading-relaxed">{displayText}</p>
+                        <p className="text-base text-gray-800 leading-relaxed">
+                            {speaker && <span className="font-medium text-gray-600">{speaker}: </span>}
+                            {displayText}
+                        </p>
                     )}
                 </div>
             </div>
@@ -293,6 +301,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         id={segment.id}
                                         timestamp={segment.timestamp}
                                         text={getDisplayText(segment)}
+                                        speaker={segment.speaker}
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
@@ -349,6 +358,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         id={segment.id}
                                         timestamp={segment.timestamp}
                                         text={getDisplayText(segment)}
+                                        speaker={segment.speaker}
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}

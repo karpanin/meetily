@@ -312,18 +312,20 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({ transcripts, isR
                       <p className="text-base text-gray-800 leading-relaxed" style={{ visibility: 'hidden' }}>
                         {sizerText}
                       </p>
-                      <p className="text-base text-gray-800 leading-relaxed absolute top-0 left-0">
-                        {displayText}
-                      </p>
-                    </div>
+                    <p className="text-base text-gray-800 leading-relaxed absolute top-0 left-0">
+                      {transcript.speaker && <span className="font-medium text-gray-600">{transcript.speaker}: </span>}
+                      {displayText}
+                    </p>
                   </div>
-                ) : (
+                </div>
+              ) : (
                   // Regular transcript - simple text
                   <div className="relative">
                     <p className="text-base text-gray-800 leading-relaxed" style={{ visibility: 'hidden' }}>
                       {sizerText}
                     </p>
                     <p className="text-base text-gray-800 leading-relaxed absolute top-0 left-0">
+                      {transcript.speaker && <span className="font-medium text-gray-600">{transcript.speaker}: </span>}
                       {displayText}
                     </p>
                   </div>

@@ -93,16 +93,16 @@ const ConfigContext = createContext<ConfigContextType | undefined>(undefined);
 export function ConfigProvider({ children }: { children: ReactNode }) {
   // Model configuration state
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
-    provider: 'ollama',
-    model: 'llama3.2:latest',
+    provider: 'custom-openai',
+    model: 'gpt-4o',
     whisperModel: 'large-v3',
     ollamaEndpoint: null
   });
 
   // Transcript model configuration state
   const [transcriptModelConfig, setTranscriptModelConfig] = useState<TranscriptModelProps>({
-    provider: 'parakeet',
-    model: 'parakeet-tdt-0.6b-v3-int8',
+    provider: 'openaiCompatible',
+    model: 'whisper-1',
     openaiEndpoint: null,
     apiKey: null
   });
@@ -162,6 +162,10 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   // Load Ollama models (uses saved endpoint, re-runs when endpoint changes after config load)
   useEffect(() => {
     const loadModels = async () => {
+      if (modelConfig.provider !== 'ollama') {
+        setModels([]);
+        return;
+      }
       try {
         const endpoint = modelConfig.ollamaEndpoint || null;
         const modelList = await invoke<OllamaModel[]>('get_ollama_models', { endpoint });
@@ -183,8 +187,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
         if (config) {
           console.log('[ConfigContext] Loaded saved transcript config:', config);
           setTranscriptModelConfig({
-            provider: config.provider || 'parakeet',
-            model: config.model || 'parakeet-tdt-0.6b-v3-int8',
+            provider: config.provider || 'openaiCompatible',
+            model: config.model || 'whisper-1',
             openaiEndpoint: config.openaiEndpoint || null,
             apiKey: config.apiKey || null
           });

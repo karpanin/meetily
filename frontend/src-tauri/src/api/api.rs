@@ -135,6 +135,8 @@ pub struct MeetingTranscript {
     pub id: String,
     pub text: String,
     pub timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
     // Recording-relative timestamps for audio-transcript synchronization
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_start_time: Option<f64>,
@@ -186,6 +188,8 @@ pub struct TranscriptSegment {
     pub id: String,
     pub text: String,
     pub timestamp: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
     // NEW: Recording-relative timestamps for playback synchronization
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_start_time: Option<f64>,
@@ -638,10 +642,10 @@ pub async fn api_get_transcript_config<R: Runtime>(
             }
         }
         Ok(None) => {
-            log_info!("No transcript config found, returning default.");
+            log_info!("No transcript config found, returning remote-only default.");
             Ok(Some(TranscriptConfig {
-                provider: "parakeet".to_string(),
-                model: "parakeet-tdt-0.6b-v3-int8".to_string(),
+                provider: "openaiCompatible".to_string(),
+                model: "whisper-1".to_string(),
                 openai_endpoint: None,
                 api_key: None,
             }))
@@ -668,6 +672,10 @@ pub async fn api_save_transcript_config<R: Runtime>(
         &provider
     );
     let pool = state.db_manager.pool();
+
+    if provider != "openaiCompatible" {
+        return Err("This build supports only openaiCompatible transcription provider".to_string());
+    }
 
     if provider == "openaiCompatible" {
         let endpoint_valid = openai_endpoint
@@ -900,6 +908,7 @@ pub async fn api_get_meeting_transcripts<R: Runtime>(
                     id: t.id,
                     text: t.transcript,
                     timestamp: t.timestamp,
+                    speaker: t.speaker,
                     audio_start_time: t.audio_start_time,
                     audio_end_time: t.audio_end_time,
                     duration: t.duration,
