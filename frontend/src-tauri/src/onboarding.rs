@@ -27,11 +27,11 @@ impl Default for OnboardingStatus {
     fn default() -> Self {
         Self {
             version: "1.0".to_string(),
-            completed: false,
-            current_step: 1,
+            completed: true,
+            current_step: 4,
             model_status: ModelStatus {
-                parakeet: "not_downloaded".to_string(),
-                summary: "not_downloaded".to_string(),  // Changed from gemma
+                parakeet: "downloaded".to_string(),
+                summary: "downloaded".to_string(),
             },
             last_updated: chrono::Utc::now().to_rfc3339(),
         }
