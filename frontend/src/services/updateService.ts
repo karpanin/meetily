@@ -8,6 +8,7 @@
 import { check, Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { getVersion } from '@tauri-apps/api/app';
+import { isTauriRuntime } from '@/lib/tauriRuntime';
 
 export interface UpdateInfo {
   available: boolean;
@@ -39,6 +40,13 @@ export class UpdateService {
    * @returns Promise with update information
    */
   async checkForUpdates(force = false): Promise<UpdateInfo> {
+    if (!isTauriRuntime()) {
+      return {
+        available: false,
+        currentVersion: 'dev',
+      };
+    }
+
     // Prevent concurrent update checks
     if (this.updateCheckInProgress) {
       throw new Error('Update check already in progress');
@@ -118,6 +126,7 @@ export class UpdateService {
    * @returns Promise with version string
    */
   async getCurrentVersion(): Promise<string> {
+    if (!isTauriRuntime()) return 'dev';
     return getVersion();
   }
 

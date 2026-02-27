@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { X, Download, Check, Loader2, ArrowBigDownDash } from 'lucide-react';
+import { safeListen } from '@/lib/tauriRuntime';
 
 interface DownloadProgress {
   modelName: string;
@@ -218,7 +218,7 @@ export function useDownloadProgressToast() {
 
   // Listen to Parakeet download events
   useEffect(() => {
-    const unlistenProgress = listen<{
+    const unlistenProgress = safeListen<{
       modelName: string;
       progress: number;
       downloaded_mb?: number;
@@ -251,7 +251,7 @@ export function useDownloadProgressToast() {
       // Removed direct showDownloadToast call here, handled by effect
     });
 
-    const unlistenComplete = listen<{ modelName: string }>(
+    const unlistenComplete = safeListen<{ modelName: string }>(
       'parakeet-model-download-complete',
       (event) => {
         const { modelName } = event.payload;
@@ -270,7 +270,7 @@ export function useDownloadProgressToast() {
       }
     );
 
-    const unlistenError = listen<{ modelName: string; error: string }>(
+    const unlistenError = safeListen<{ modelName: string; error: string }>(
       'parakeet-model-download-error',
       (event) => {
         const { modelName, error } = event.payload;
@@ -299,7 +299,7 @@ export function useDownloadProgressToast() {
 
   // Listen to Built-in AI (Gemma) download events
   useEffect(() => {
-    const unlisten = listen<{
+    const unlisten = safeListen<{
       model: string;
       progress: number;
       downloaded_mb?: number;
