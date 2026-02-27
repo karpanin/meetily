@@ -1,6 +1,6 @@
 export function isTauriRuntime(): boolean {
   if (typeof window === 'undefined') return false;
-  return !!(window as any).__TAURI_INTERNALS__;
+  return typeof (window as any)?.__TAURI_INTERNALS__?.invoke === 'function';
 }
 
 export function isTauriUnavailableError(error: unknown): boolean {
@@ -8,6 +8,8 @@ export function isTauriUnavailableError(error: unknown): boolean {
   return (
     msg.includes('tauri api is not available') ||
     msg.includes('__tauri_internals__') ||
+    msg.includes("reading 'invoke'") ||
+    msg.includes('cannot read properties of undefined (reading \'invoke\')') ||
     msg.includes('transformcallback') ||
     msg.includes('ipc') ||
     msg.includes('not available in this runtime')
@@ -28,11 +30,20 @@ export async function safeInvoke<T = unknown>(
 
   while (Date.now() - start < timeoutMs) {
     try {
-      const core = await import('@tauri-apps/api/core');
-      if (!core || typeof core.invoke !== 'function') {
-        throw new Error('Tauri API is not available in this runtime');
+      const internals = (window as any)?.__TAURI_INTERNALS__;
+      if (typeof internals?.invoke === 'function') {
+        return await internals.invoke(command, args);
       }
-      return await core.invoke<T>(command, args);
+
+      const core = await import('@tauri-apps/api/core');
+      const invokeFn =
+        (core as any)?.invoke ||
+        (core as any)?.default?.invoke;
+      if (typeof invokeFn === 'function') {
+        return await invokeFn(command, args);
+      }
+
+      throw new Error('Tauri API is not available in this runtime');
     } catch (error) {
       lastError = error;
       if (!isTauriUnavailableError(error)) {
