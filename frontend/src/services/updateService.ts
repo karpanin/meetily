@@ -34,6 +34,17 @@ export class UpdateService {
   private lastCheckTime: number | null = null;
   private readonly CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+  private isSafeNoUpdateError(error: unknown): boolean {
+    const msg = String(error ?? '').toLowerCase();
+    return (
+      msg.includes("reading 'available'") ||
+      msg.includes('reading "available"') ||
+      msg.includes('updater') ||
+      msg.includes('not configured') ||
+      msg.includes('not available')
+    );
+  }
+
   /**
    * Check for available updates
    * @param force Force check even if recently checked
@@ -87,6 +98,13 @@ export class UpdateService {
       };
     } catch (error) {
       console.error('Failed to check for updates:', error);
+      if (this.isSafeNoUpdateError(error)) {
+        const fallbackVersion = await getVersion().catch(() => 'unknown');
+        return {
+          available: false,
+          currentVersion: fallbackVersion,
+        };
+      }
       throw error;
     } finally {
       this.updateCheckInProgress = false;
