@@ -212,8 +212,8 @@ pub async fn generate_meeting_summary(
         info!("Split transcript into {} chunks", num_chunks);
 
         let mut chunk_summaries = Vec::new();
-        let system_prompt_chunk = "You are an expert meeting summarizer.";
-        let user_prompt_template_chunk = "Provide a concise but comprehensive summary of the following transcript chunk. Capture all key points, decisions, action items, and mentioned individuals.\n\n<transcript_chunk>\n{}\n</transcript_chunk>";
+        let system_prompt_chunk = "You are an expert meeting summarizer. Detect the dominant language of the provided transcript chunk and write your summary in that same language. Do not translate to English unless the chunk itself is primarily in English.";
+        let user_prompt_template_chunk = "Provide a concise but comprehensive summary of the following transcript chunk. Capture all key points, decisions, action items, and mentioned individuals.\n\nLanguage rule: output must be in the dominant language of this chunk.\n\n<transcript_chunk>\n{}\n</transcript_chunk>";
 
         for (i, chunk) in chunks.iter().enumerate() {
             // Check for cancellation before processing each chunk
@@ -278,8 +278,8 @@ pub async fn generate_meeting_summary(
                 chunk_summaries.len()
             );
             let combined_text = chunk_summaries.join("\n---\n");
-            let system_prompt_combine = "You are an expert at synthesizing meeting summaries.";
-            let user_prompt_combine_template = "The following are consecutive summaries of a meeting. Combine them into a single, coherent, and detailed narrative summary that retains all important details, organized logically.\n\n<summaries>\n{}\n</summaries>";
+            let system_prompt_combine = "You are an expert at synthesizing meeting summaries. Keep the output language aligned with the dominant language used in the provided summaries.";
+            let user_prompt_combine_template = "The following are consecutive summaries of a meeting. Combine them into a single, coherent, and detailed narrative summary that retains all important details, organized logically.\n\nLanguage rule: output must be in the dominant language of these summaries.\n\n<summaries>\n{}\n</summaries>";
 
             let user_prompt_combine = user_prompt_combine_template.replace("{}", &combined_text);
             generate_summary(
@@ -323,6 +323,8 @@ pub async fn generate_meeting_summary(
 4. If a section has no relevant info, write "None noted in this section."
 5. Output **only** the completed Markdown report.
 6. If unsure about something, omit it.
+7. Detect the dominant language of `<transcript_chunks>` and write the report content in that same language.
+8. If transcript contains multiple languages, use the primary language by volume/time.
 
 **SECTION-SPECIFIC INSTRUCTIONS:**
 {}
