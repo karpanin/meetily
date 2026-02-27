@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -13,6 +12,14 @@ import { useConfig } from '@/contexts/ConfigContext';
 interface SummaryModelSettingsProps {
   refetchTrigger?: number;
 }
+
+const invokeTauri = async <T = unknown>(command: string, args?: Record<string, unknown>): Promise<T> => {
+  const core = await import('@tauri-apps/api/core');
+  if (!core || typeof core.invoke !== 'function') {
+    throw new Error('Tauri API is not available in this runtime');
+  }
+  return core.invoke<T>(command, args);
+};
 
 export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsProps) {
   const { isAutoSummary, toggleIsAutoSummary, setModelConfig } = useConfig();
@@ -29,7 +36,7 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
 
   const loadSettings = async () => {
     try {
-      const customConfig = (await invoke('api_get_custom_openai_config')) as {
+      const customConfig = (await invokeTauri('api_get_custom_openai_config')) as {
         endpoint?: string;
         model?: string;
         apiKey?: string;
@@ -44,7 +51,7 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
         return;
       }
 
-      const modelConfig = (await invoke('api_get_model_config')) as {
+      const modelConfig = (await invokeTauri('api_get_model_config')) as {
         model?: string;
       } | null;
       if (modelConfig?.model) {
@@ -85,7 +92,7 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
         return;
       }
 
-      await invoke('api_save_custom_openai_config', {
+      await invokeTauri('api_save_custom_openai_config', {
         endpoint: normalizedEndpoint,
         model: normalizedModel,
         apiKey: normalizedApiKey,
@@ -94,7 +101,7 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
         topP: null,
       });
 
-      await invoke('api_save_model_config', {
+      await invokeTauri('api_save_model_config', {
         provider: 'custom-openai',
         model: normalizedModel,
         whisperModel: 'large-v3',
@@ -133,7 +140,7 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
         return;
       }
 
-      const result = await invoke<{ status: string; message: string }>(
+      const result = await invokeTauri<{ status: string; message: string }>(
         'api_test_custom_openai_connection',
         {
           endpoint: normalizedEndpoint,
