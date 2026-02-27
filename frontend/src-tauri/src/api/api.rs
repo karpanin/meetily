@@ -677,6 +677,13 @@ pub async fn api_save_transcript_config<R: Runtime>(
         return Err("This build supports only openaiCompatible transcription provider".to_string());
     }
 
+    let normalized_api_key = api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| "API key is required for OpenAI-compatible transcription".to_string())?;
+
     if provider == "openaiCompatible" {
         let endpoint_valid = openai_endpoint
             .as_deref()
@@ -699,15 +706,12 @@ pub async fn api_save_transcript_config<R: Runtime>(
         return Err(e.to_string());
     }
 
-    if let Some(key) = api_key {
-        if !key.is_empty() {
-            log_info!("API key provided, saving for transcript provider...");
-            if let Err(e) = SettingsRepository::save_transcript_api_key(pool, &provider, &key).await
-            {
-                log_error!("Failed to save transcript API key: {}", e);
-                return Err(e.to_string());
-            }
-        }
+    log_info!("API key provided, saving for transcript provider...");
+    if let Err(e) =
+        SettingsRepository::save_transcript_api_key(pool, &provider, &normalized_api_key).await
+    {
+        log_error!("Failed to save transcript API key: {}", e);
+        return Err(e.to_string());
     }
 
     log_info!("Successfully saved transcript configuration.");
@@ -1249,9 +1253,20 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
         }
     }
 
+    let normalized_api_key = api_key
+        .and_then(|k| {
+            let trimmed = k.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .ok_or_else(|| "API key is required".to_string())?;
+
     let config = CustomOpenAIConfig {
         endpoint: endpoint.trim().to_string(),
-        api_key: api_key.filter(|k| !k.trim().is_empty()),
+        api_key: Some(normalized_api_key),
         model: model.trim().to_string(),
         max_tokens,
         temperature,
@@ -1321,6 +1336,11 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
     if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
         return Err("Endpoint must start with http:// or https://".to_string());
     }
+    let normalized_api_key = api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| "API key is required".to_string())?;
 
     // Build the URL - append /chat/completions to the base endpoint
     let url = format!("{}/chat/completions", endpoint.trim_end_matches('/'));
@@ -1348,9 +1368,7 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
         .json(&test_request);
 
     // Add authorization if API key provided
-    if let Some(key) = api_key.filter(|k| !k.trim().is_empty()) {
-        request = request.header("Authorization", format!("Bearer {}", key));
-    }
+    request = request.header("Authorization", format!("Bearer {}", normalized_api_key));
 
     match request.send().await {
         Ok(response) => {
@@ -1443,6 +1461,11 @@ pub async fn api_test_openai_compatible_transcription_connection<R: Runtime>(
     if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
         return Err("Endpoint must start with http:// or https://".to_string());
     }
+    let normalized_api_key = api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+        .ok_or_else(|| "API key is required".to_string())?;
 
     // Build minimal 16kHz mono PCM16 WAV (0.5s silence)
     let sample_rate: u32 = 16_000;
@@ -1486,9 +1509,7 @@ pub async fn api_test_openai_compatible_transcription_connection<R: Runtime>(
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
     let mut request = client.post(&url).multipart(form);
-    if let Some(key) = api_key.filter(|k| !k.trim().is_empty()) {
-        request = request.header("Authorization", format!("Bearer {}", key.trim()));
-    }
+    request = request.header("Authorization", format!("Bearer {}", normalized_api_key));
 
     match request.send().await {
         Ok(response) => {

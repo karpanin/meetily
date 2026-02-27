@@ -5,6 +5,7 @@ import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
+import { toast } from 'sonner';
 
 export interface TranscriptModelProps {
   provider: 'openaiCompatible';
@@ -32,6 +33,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
   useEffect(() => {
     setApiKey(transcriptModelConfig.apiKey || null);
     setOpenaiEndpoint(transcriptModelConfig.openaiEndpoint || '');
+    setIsApiKeyLocked(!!(transcriptModelConfig.apiKey || '').trim());
   }, [transcriptModelConfig.apiKey, transcriptModelConfig.openaiEndpoint]);
 
   const handleInputClick = () => {
@@ -45,7 +47,11 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
     try {
       const endpoint = openaiEndpoint.trim();
       const model = transcriptModelConfig.model?.trim() || 'whisper-1';
-      const normalizedApiKey = apiKey?.trim() ? apiKey.trim() : null;
+      const normalizedApiKey = apiKey?.trim() || '';
+      if (!endpoint || !model || !normalizedApiKey) {
+        toast.error('Endpoint, model, and API key are required');
+        return;
+      }
 
       await invoke('api_save_transcript_config', {
         provider: 'openaiCompatible',
@@ -60,8 +66,10 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
         openaiEndpoint: endpoint,
         apiKey: normalizedApiKey,
       });
+      toast.success('Model settings saved successfully');
     } catch (error) {
       console.error('Failed to save OpenAI-compatible transcript settings:', error);
+      toast.error(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -73,7 +81,12 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
 
       const endpoint = openaiEndpoint.trim();
       const model = (transcriptModelConfig.model || 'whisper-1').trim();
-      const normalizedApiKey = apiKey?.trim() ? apiKey.trim() : null;
+      const normalizedApiKey = apiKey?.trim() || '';
+      if (!endpoint || !model || !normalizedApiKey) {
+        setConnectionTestOk(false);
+        setConnectionTestMessage('Endpoint, model, and API key are required');
+        return;
+      }
 
       const result = await invoke<{ status: string; message: string }>(
         'api_test_openai_compatible_transcription_connection',
@@ -93,6 +106,11 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
       setIsTestingConnection(false);
     }
   };
+
+  const isFormValid =
+    !!openaiEndpoint.trim() &&
+    !!(transcriptModelConfig.model || '').trim() &&
+    !!(apiKey || '').trim();
 
   return (
     <div className="space-y-4 pb-6">
@@ -210,14 +228,17 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
         </div>
       </div>
 
-      <Button type="button" onClick={saveSettings} className="w-full">
+      <Button type="button" onClick={saveSettings} disabled={!isFormValid} className="w-full">
         Save Settings
       </Button>
       <Button
         type="button"
         variant="outline"
         onClick={testConnection}
-        disabled={isTestingConnection || !openaiEndpoint.trim() || !(transcriptModelConfig.model || 'whisper-1').trim()}
+        disabled={
+          isTestingConnection ||
+          !isFormValid
+        }
         className="w-full"
       >
         {isTestingConnection ? 'Testing...' : 'Test Connection'}

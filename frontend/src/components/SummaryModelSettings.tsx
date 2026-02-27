@@ -1,128 +1,161 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
-import { ModelConfig, ModelSettingsModal } from '@/components/ModelSettingsModal';
+import { Input } from './ui/input';
+import { Button } from './ui/button';
+import { Label } from './ui/label';
+import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 import { Switch } from './ui/switch';
 import { useConfig } from '@/contexts/ConfigContext';
 
 interface SummaryModelSettingsProps {
-  refetchTrigger?: number; // Change this to trigger refetch
+  refetchTrigger?: number;
 }
 
 export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsProps) {
-  const [modelConfig, setModelConfig] = useState<ModelConfig>({
-    provider: 'custom-openai',
-    model: 'gpt-4o',
-    whisperModel: 'large-v3',
-    apiKey: null,
-    ollamaEndpoint: null
-  });
+  const { isAutoSummary, toggleIsAutoSummary, setModelConfig } = useConfig();
 
-  const { isAutoSummary, toggleIsAutoSummary } = useConfig();
+  const [endpoint, setEndpoint] = useState('');
+  const [model, setModel] = useState('gpt-4o');
+  const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [isApiKeyLocked, setIsApiKeyLocked] = useState(true);
+  const [isLockButtonVibrating, setIsLockButtonVibrating] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionTestMessage, setConnectionTestMessage] = useState('');
+  const [connectionTestOk, setConnectionTestOk] = useState<boolean | null>(null);
 
-  // Reusable fetch function
-  const fetchModelConfig = useCallback(async () => {
+  const loadSettings = async () => {
     try {
-      const data = await invoke('api_get_model_config') as any;
-      if (data && data.provider !== null) {
-        // Fetch API key if not included and provider requires it
-        if (data.provider !== 'custom-openai' && !data.apiKey) {
-          try {
-            const apiKeyData = await invoke('api_get_api_key', {
-              provider: data.provider
-            }) as string;
-            data.apiKey = apiKeyData;
-          } catch (err) {
-            console.error('Failed to fetch API key:', err);
-          }
-        }
-        // Fetch Custom OpenAI config if that's the active provider
-        if (data.provider === 'custom-openai') {
-          try {
-            const customConfig = (await invoke('api_get_custom_openai_config')) as any;
-            if (customConfig) {
-              data.customOpenAIDisplayName = customConfig.displayName || null;
-              data.customOpenAIEndpoint = customConfig.endpoint || null;
-              data.customOpenAIModel = customConfig.model || null;
-              data.customOpenAIApiKey = customConfig.apiKey || null;
-              data.maxTokens = customConfig.maxTokens || null;
-              data.temperature = customConfig.temperature || null;
-              data.topP = customConfig.topP || null;
-              // For custom-openai, model field should match customOpenAIModel
-              data.model = customConfig.model || data.model;
-            }
-          } catch (err) {
-            console.error('Failed to fetch custom OpenAI config:', err);
-          }
-        }
-        setModelConfig(data);
+      const customConfig = (await invoke('api_get_custom_openai_config')) as {
+        endpoint?: string;
+        model?: string;
+        apiKey?: string;
+      } | null;
+
+      if (customConfig) {
+        setEndpoint(customConfig.endpoint || '');
+        setModel(customConfig.model || 'gpt-4o');
+        const key = customConfig.apiKey || '';
+        setApiKey(key);
+        setIsApiKeyLocked(!!key.trim());
+        return;
       }
+
+      const modelConfig = (await invoke('api_get_model_config')) as {
+        model?: string;
+      } | null;
+      if (modelConfig?.model) {
+        setModel(modelConfig.model);
+      }
+      setIsApiKeyLocked(false);
     } catch (error) {
-      console.error('Failed to fetch model config:', error);
+      console.error('Failed to load model settings:', error);
       toast.error('Failed to load model settings');
     }
+  };
+
+  useEffect(() => {
+    loadSettings();
   }, []);
 
-  // Fetch on mount
-  useEffect(() => {
-    fetchModelConfig();
-  }, [fetchModelConfig]);
-
-  // Refetch when trigger changes (optional external control)
   useEffect(() => {
     if (refetchTrigger !== undefined && refetchTrigger > 0) {
-      fetchModelConfig();
+      loadSettings();
     }
-  }, [refetchTrigger, fetchModelConfig]);
+  }, [refetchTrigger]);
 
-  // Listen for model config updates from other components
-  useEffect(() => {
-    const setupListener = async () => {
-      const { listen } = await import('@tauri-apps/api/event');
-      const unlisten = await listen<ModelConfig>('model-config-updated', (event) => {
-        console.log('SummaryModelSettings received model-config-updated event:', event.payload);
-        setModelConfig(event.payload);
-      });
+  const handleInputClick = () => {
+    if (isApiKeyLocked) {
+      setIsLockButtonVibrating(true);
+      setTimeout(() => setIsLockButtonVibrating(false), 500);
+    }
+  };
 
-      return unlisten;
-    };
-
-    let cleanup: (() => void) | undefined;
-    setupListener().then(fn => cleanup = fn);
-
-    return () => {
-      cleanup?.();
-    };
-  }, []);
-
-  // Save handler
-  const handleSaveModelConfig = async (config: ModelConfig) => {
+  const saveSettings = async () => {
     try {
-      await invoke('api_save_model_config', {
-        provider: config.provider,
-        model: config.model,
-        whisperModel: config.whisperModel,
-        apiKey: config.apiKey,
-        ollamaEndpoint: config.ollamaEndpoint,
+      const normalizedEndpoint = endpoint.trim();
+      const normalizedModel = model.trim();
+      const normalizedApiKey = apiKey.trim();
+
+      if (!normalizedEndpoint || !normalizedModel || !normalizedApiKey) {
+        toast.error('Endpoint, model, and API key are required');
+        return;
+      }
+
+      await invoke('api_save_custom_openai_config', {
+        endpoint: normalizedEndpoint,
+        model: normalizedModel,
+        apiKey: normalizedApiKey,
+        maxTokens: null,
+        temperature: null,
+        topP: null,
       });
 
-      setModelConfig(config);
+      await invoke('api_save_model_config', {
+        provider: 'custom-openai',
+        model: normalizedModel,
+        whisperModel: 'large-v3',
+        apiKey: null,
+        ollamaEndpoint: null,
+      });
 
-      // Emit event to sync other components
-      const { emit } = await import('@tauri-apps/api/event');
-      await emit('model-config-updated', config);
+      setModelConfig((prev) => ({
+        ...prev,
+        provider: 'custom-openai',
+        model: normalizedModel,
+        customOpenAIEndpoint: normalizedEndpoint,
+        customOpenAIModel: normalizedModel,
+        customOpenAIApiKey: normalizedApiKey,
+      }));
 
       toast.success('Model settings saved successfully');
     } catch (error) {
-      console.error('Error saving model config:', error);
+      console.error('Error saving model settings:', error);
       toast.error('Failed to save model settings');
     }
   };
 
+  const testConnection = async () => {
+    try {
+      setIsTestingConnection(true);
+      setConnectionTestMessage('');
+      setConnectionTestOk(null);
+
+      const normalizedEndpoint = endpoint.trim();
+      const normalizedModel = model.trim();
+      const normalizedApiKey = apiKey.trim();
+      if (!normalizedEndpoint || !normalizedModel || !normalizedApiKey) {
+        setConnectionTestOk(false);
+        setConnectionTestMessage('Endpoint, model, and API key are required');
+        return;
+      }
+
+      const result = await invoke<{ status: string; message: string }>(
+        'api_test_custom_openai_connection',
+        {
+          endpoint: normalizedEndpoint,
+          apiKey: normalizedApiKey,
+          model: normalizedModel,
+        }
+      );
+
+      setConnectionTestOk(true);
+      setConnectionTestMessage(result.message || 'Connection successful');
+    } catch (error) {
+      setConnectionTestOk(false);
+      setConnectionTestMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsTestingConnection(false);
+    }
+  };
+
+  const isFormValid = endpoint.trim() && model.trim() && apiKey.trim();
+
   return (
-    <div className='flex flex-col gap-4'>
+    <div className="flex flex-col gap-4">
       <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
@@ -135,16 +168,85 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
 
       <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
         <h3 className="text-lg font-semibold mb-4">Summary Model Configuration</h3>
-        <p className="text-sm text-gray-600 mb-6">
-          Configure the AI model used for generating meeting summaries.
-        </p>
+        <p className="text-sm text-gray-600 mb-6">Configure OpenAI-compatible provider for meeting summaries.</p>
 
-        <ModelSettingsModal
-          modelConfig={modelConfig}
-          setModelConfig={setModelConfig}
-          onSave={handleSaveModelConfig}
-          skipInitialFetch={true}
-        />
+        <div className="space-y-4 pb-2">
+          <div>
+            <Label className="block text-sm font-medium text-gray-700 mb-1">OpenAI-Compatible Endpoint</Label>
+            <Input
+              type="text"
+              className="focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              value={endpoint}
+              onChange={(e) => setEndpoint(e.target.value)}
+              placeholder="http://your-server:8000/v1"
+            />
+          </div>
+
+          <div>
+            <Label className="block text-sm font-medium text-gray-700 mb-1">Summary Model</Label>
+            <Input
+              type="text"
+              className="focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="e.g. gpt-4o or your-custom-summary-model"
+            />
+          </div>
+
+          <div>
+            <Label className="block text-sm font-medium text-gray-700 mb-1">API Key</Label>
+            <div className="relative">
+              <Input
+                type={showApiKey ? 'text' : 'password'}
+                className={`pr-24 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 ${isApiKeyLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                disabled={isApiKeyLocked}
+                onClick={handleInputClick}
+                placeholder="Enter your API key"
+              />
+              {isApiKeyLocked && (
+                <div
+                  onClick={handleInputClick}
+                  className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-50 rounded-md cursor-not-allowed"
+                />
+              )}
+              <div className="absolute inset-y-0 right-0 pr-1 flex items-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setIsApiKeyLocked(!isApiKeyLocked)}
+                  className={`transition-colors duration-200 ${isLockButtonVibrating ? 'animate-vibrate text-red-500' : ''}`}
+                  title={isApiKeyLocked ? 'Unlock to edit' : 'Lock to prevent editing'}
+                >
+                  {isApiKeyLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                </Button>
+                <Button type="button" variant="ghost" size="icon" onClick={() => setShowApiKey(!showApiKey)}>
+                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <Button type="button" onClick={saveSettings} disabled={!isFormValid} className="w-full">
+            Save Settings
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={testConnection}
+            disabled={isTestingConnection || !isFormValid}
+            className="w-full"
+          >
+            {isTestingConnection ? 'Testing...' : 'Test Connection'}
+          </Button>
+          {connectionTestMessage && (
+            <p className={`text-xs ${connectionTestOk ? 'text-green-600' : 'text-red-600'}`}>
+              {connectionTestMessage}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
