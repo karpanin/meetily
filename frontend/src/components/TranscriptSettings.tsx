@@ -123,27 +123,21 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
 
       <div>
         <Label className="block text-sm font-medium text-gray-700 mb-1">Transcription Model</Label>
-        <div className="mx-1">
-          <Select
-            value={transcriptModelConfig.model || 'whisper-1'}
-            onValueChange={(value) =>
-              setTranscriptModelConfig({
-                ...transcriptModelConfig,
-                provider: 'openaiCompatible',
-                model: value,
-                openaiEndpoint,
-                apiKey,
-              })
-            }
-          >
-            <SelectTrigger className="focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
-              <SelectValue placeholder="Select model" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="whisper-1">whisper-1</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Input
+          type="text"
+          className="focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+          value={transcriptModelConfig.model || ''}
+          onChange={(e) =>
+            setTranscriptModelConfig({
+              ...transcriptModelConfig,
+              provider: 'openaiCompatible',
+              model: e.target.value,
+              openaiEndpoint,
+              apiKey,
+            })
+          }
+          placeholder="e.g. whisper-1 or your-custom-stt-model"
+        />
       </div>
 
       <div>
