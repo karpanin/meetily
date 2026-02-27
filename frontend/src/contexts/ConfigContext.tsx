@@ -103,6 +103,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const [transcriptModelConfig, setTranscriptModelConfig] = useState<TranscriptModelProps>({
     provider: 'parakeet',
     model: 'parakeet-tdt-0.6b-v3-int8',
+    openaiEndpoint: null,
     apiKey: null
   });
 
@@ -184,6 +185,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
           setTranscriptModelConfig({
             provider: config.provider || 'parakeet',
             model: config.model || 'parakeet-tdt-0.6b-v3-int8',
+            openaiEndpoint: config.openaiEndpoint || null,
             apiKey: config.apiKey || null
           });
         }

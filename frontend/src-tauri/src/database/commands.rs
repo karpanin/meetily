@@ -206,6 +206,7 @@ pub async fn initialize_fresh_database(app: AppHandle) -> Result<(), String> {
         pool,
         "parakeet",
         "parakeet-tdt-0.6b-v3-int8",
+        None,
     ).await {
         error!("Failed to set default transcription model config: {}", e);
     }

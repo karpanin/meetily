@@ -112,6 +112,9 @@ pub struct TranscriptSetting {
     pub id: String,
     pub provider: String,
     pub model: String,
+    #[sqlx(rename = "openaiEndpoint")]
+    #[serde(rename = "openaiEndpoint")]
+    pub openai_endpoint: Option<String>,
     #[sqlx(rename = "whisperApiKey")]
     #[serde(rename = "whisperApiKey")]
     pub whisper_api_key: Option<String>,

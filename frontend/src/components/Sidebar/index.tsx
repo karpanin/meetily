@@ -70,6 +70,7 @@ const Sidebar: React.FC = () => {
   const [transcriptModelConfig, setTranscriptModelConfig] = useState<TranscriptModelProps>({
     provider: 'parakeet',
     model: 'parakeet-tdt-0.6b-v3-int8',
+    openaiEndpoint: null,
   });
   const [settingsSaveSuccess, setSettingsSaveSuccess] = useState<boolean | null>(null);
 
@@ -211,6 +212,7 @@ const Sidebar: React.FC = () => {
       const payload = {
         provider: configToSave.provider,
         model: configToSave.model,
+        openaiEndpoint: configToSave.openaiEndpoint ?? null,
         apiKey: configToSave.apiKey ?? null
       };
       console.log('Saving transcript config with payload:', payload);
@@ -218,6 +220,7 @@ const Sidebar: React.FC = () => {
       await invoke('api_save_transcript_config', {
         provider: payload.provider,
         model: payload.model,
+        openaiEndpoint: payload.openaiEndpoint,
         apiKey: payload.apiKey,
       });
 

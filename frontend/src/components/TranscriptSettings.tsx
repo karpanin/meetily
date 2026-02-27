@@ -8,10 +8,10 @@ import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 import { ModelManager } from './WhisperModelManager';
 import { ParakeetModelManager } from './ParakeetModelManager';
 
-
 export interface TranscriptModelProps {
-    provider: 'localWhisper' | 'parakeet' | 'deepgram' | 'elevenLabs' | 'groq' | 'openai';
+    provider: 'localWhisper' | 'parakeet' | 'deepgram' | 'elevenLabs' | 'groq' | 'openai' | 'openaiCompatible';
     model: string;
+    openaiEndpoint?: string | null;
     apiKey?: string | null;
 }
 
@@ -23,12 +23,15 @@ export interface TranscriptSettingsProps {
 
 export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelConfig, onModelSelect }: TranscriptSettingsProps) {
     const [apiKey, setApiKey] = useState<string | null>(transcriptModelConfig.apiKey || null);
+    const [openaiEndpoint, setOpenaiEndpoint] = useState<string>(transcriptModelConfig.openaiEndpoint || '');
     const [showApiKey, setShowApiKey] = useState<boolean>(false);
     const [isApiKeyLocked, setIsApiKeyLocked] = useState<boolean>(true);
     const [isLockButtonVibrating, setIsLockButtonVibrating] = useState<boolean>(false);
     const [uiProvider, setUiProvider] = useState<TranscriptModelProps['provider']>(transcriptModelConfig.provider);
+    const [isTestingConnection, setIsTestingConnection] = useState<boolean>(false);
+    const [connectionTestMessage, setConnectionTestMessage] = useState<string>('');
+    const [connectionTestOk, setConnectionTestOk] = useState<boolean | null>(null);
 
-    // Sync uiProvider when backend config changes (e.g., after model selection or initial load)
     useEffect(() => {
         setUiProvider(transcriptModelConfig.provider);
     }, [transcriptModelConfig.provider]);
@@ -39,26 +42,32 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
         }
     }, [transcriptModelConfig.provider]);
 
+    useEffect(() => {
+        setApiKey(transcriptModelConfig.apiKey || null);
+        setOpenaiEndpoint(transcriptModelConfig.openaiEndpoint || '');
+    }, [transcriptModelConfig.apiKey, transcriptModelConfig.openaiEndpoint]);
+
     const fetchApiKey = async (provider: string) => {
         try {
-
             const data = await invoke('api_get_transcript_api_key', { provider }) as string;
-
             setApiKey(data || '');
         } catch (err) {
             console.error('Error fetching API key:', err);
             setApiKey(null);
         }
     };
-    const modelOptions = {
-        localWhisper: [], // Model selection handled by ModelManager component
-        parakeet: [], // Model selection handled by ParakeetModelManager component
+
+    const modelOptions: Record<TranscriptModelProps['provider'], string[]> = {
+        localWhisper: [],
+        parakeet: [],
         deepgram: ['nova-2-phonecall'],
         elevenLabs: ['eleven_multilingual_v2'],
         groq: ['llama-3.3-70b-versatile'],
         openai: ['gpt-4o'],
+        openaiCompatible: ['whisper-1'],
     };
-    const requiresApiKey = transcriptModelConfig.provider === 'deepgram' || transcriptModelConfig.provider === 'elevenLabs' || transcriptModelConfig.provider === 'openai' || transcriptModelConfig.provider === 'groq';
+
+    const requiresApiKey = uiProvider === 'deepgram' || uiProvider === 'elevenLabs' || uiProvider === 'openai' || uiProvider === 'groq' || uiProvider === 'openaiCompatible';
 
     const handleInputClick = () => {
         if (isApiKeyLocked) {
@@ -68,39 +77,81 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
     };
 
     const handleWhisperModelSelect = (modelName: string) => {
-        // Always update config when model is selected, regardless of current provider
-        // This ensures the model is set when user switches back
         setTranscriptModelConfig({
             ...transcriptModelConfig,
-            provider: 'localWhisper', // Ensure provider is set correctly
+            provider: 'localWhisper',
             model: modelName
         });
-        // Close modal after selection
         if (onModelSelect) {
             onModelSelect();
         }
     };
 
     const handleParakeetModelSelect = (modelName: string) => {
-        // Always update config when model is selected, regardless of current provider
-        // This ensures the model is set when user switches back
         setTranscriptModelConfig({
             ...transcriptModelConfig,
-            provider: 'parakeet', // Ensure provider is set correctly
+            provider: 'parakeet',
             model: modelName
         });
-        // Close modal after selection
         if (onModelSelect) {
             onModelSelect();
+        }
+    };
+
+    const saveOpenAICompatibleSettings = async () => {
+        try {
+            const endpoint = openaiEndpoint.trim();
+            const model = transcriptModelConfig.model?.trim() || 'whisper-1';
+            const normalizedApiKey = apiKey?.trim() ? apiKey.trim() : null;
+            await invoke('api_save_transcript_config', {
+                provider: 'openaiCompatible',
+                model,
+                openaiEndpoint: endpoint,
+                apiKey: normalizedApiKey,
+            });
+            setTranscriptModelConfig({
+                provider: 'openaiCompatible',
+                model,
+                openaiEndpoint: endpoint,
+                apiKey: normalizedApiKey,
+            });
+        } catch (error) {
+            console.error('Failed to save OpenAI-compatible transcript settings:', error);
+        }
+    };
+
+    const testOpenAICompatibleConnection = async () => {
+        try {
+            setIsTestingConnection(true);
+            setConnectionTestMessage('');
+            setConnectionTestOk(null);
+
+            const endpoint = openaiEndpoint.trim();
+            const model = (transcriptModelConfig.model || 'whisper-1').trim();
+            const normalizedApiKey = apiKey?.trim() ? apiKey.trim() : null;
+
+            const result = await invoke<{ status: string; message: string }>(
+                'api_test_openai_compatible_transcription_connection',
+                {
+                    endpoint,
+                    apiKey: normalizedApiKey,
+                    model,
+                }
+            );
+
+            setConnectionTestOk(true);
+            setConnectionTestMessage(result.message || 'Connection successful');
+        } catch (error) {
+            setConnectionTestOk(false);
+            setConnectionTestMessage(error instanceof Error ? error.message : String(error));
+        } finally {
+            setIsTestingConnection(false);
         }
     };
 
     return (
         <div>
             <div>
-                {/* <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-semibold text-gray-900">Transcript Settings</h3>
-                </div> */}
                 <div className="space-y-4 pb-6">
                     <div>
                         <Label className="block text-sm font-medium text-gray-700 mb-1">
@@ -112,6 +163,17 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                 onValueChange={(value) => {
                                     const provider = value as TranscriptModelProps['provider'];
                                     setUiProvider(provider);
+
+                                    if (provider === 'openaiCompatible') {
+                                        setTranscriptModelConfig({
+                                            ...transcriptModelConfig,
+                                            provider,
+                                            model: transcriptModelConfig.model || 'whisper-1',
+                                            openaiEndpoint: transcriptModelConfig.openaiEndpoint || '',
+                                            apiKey: transcriptModelConfig.apiKey || null,
+                                        });
+                                    }
+
                                     if (provider !== 'localWhisper' && provider !== 'parakeet') {
                                         fetchApiKey(provider);
                                     }
@@ -121,12 +183,9 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     <SelectValue placeholder="Select provider" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="parakeet">⚡ Parakeet (Recommended - Real-time / Accurate)</SelectItem>
-                                    <SelectItem value="localWhisper">🏠 Local Whisper (High Accuracy)</SelectItem>
-                                    {/* <SelectItem value="deepgram">☁️ Deepgram (Backup)</SelectItem>
-                                    <SelectItem value="elevenLabs">☁️ ElevenLabs</SelectItem>
-                                    <SelectItem value="groq">☁️ Groq</SelectItem>
-                                    <SelectItem value="openai">☁️ OpenAI</SelectItem> */}
+                                    <SelectItem value="parakeet">Parakeet (Recommended - Real-time / Accurate)</SelectItem>
+                                    <SelectItem value="localWhisper">Local Whisper (High Accuracy)</SelectItem>
+                                    <SelectItem value="openaiCompatible">OpenAI Compatible (Custom Endpoint)</SelectItem>
                                 </SelectContent>
                             </Select>
 
@@ -135,7 +194,13 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     value={transcriptModelConfig.model}
                                     onValueChange={(value) => {
                                         const model = value as TranscriptModelProps['model'];
-                                        setTranscriptModelConfig({ ...transcriptModelConfig, provider: uiProvider, model });
+                                        setTranscriptModelConfig({
+                                            ...transcriptModelConfig,
+                                            provider: uiProvider,
+                                            model,
+                                            openaiEndpoint,
+                                            apiKey,
+                                        });
                                     }}
                                 >
                                     <SelectTrigger className='focus:ring-1 focus:ring-blue-500 focus:border-blue-500'>
@@ -172,6 +237,55 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                         </div>
                     )}
 
+                    {uiProvider === 'openaiCompatible' && (
+                        <div className="space-y-4">
+                            <div>
+                                <Label className="block text-sm font-medium text-gray-700 mb-1">
+                                    OpenAI-Compatible Endpoint
+                                </Label>
+                                <Input
+                                    type="text"
+                                    className="focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    value={openaiEndpoint}
+                                    onChange={(e) => {
+                                        setOpenaiEndpoint(e.target.value);
+                                        setTranscriptModelConfig({
+                                            ...transcriptModelConfig,
+                                            provider: 'openaiCompatible',
+                                            openaiEndpoint: e.target.value,
+                                            model: transcriptModelConfig.model || 'whisper-1',
+                                            apiKey,
+                                        });
+                                    }}
+                                    placeholder="http://your-server:8000/v1"
+                                />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Requests will be sent to /audio/transcriptions
+                                </p>
+                            </div>
+                            <Button
+                                type="button"
+                                onClick={saveOpenAICompatibleSettings}
+                                className="w-full"
+                            >
+                                Save OpenAI-Compatible Settings
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={testOpenAICompatibleConnection}
+                                disabled={isTestingConnection || !openaiEndpoint.trim() || !(transcriptModelConfig.model || 'whisper-1').trim()}
+                                className="w-full"
+                            >
+                                {isTestingConnection ? 'Testing...' : 'Test Connection'}
+                            </Button>
+                            {connectionTestMessage && (
+                                <p className={`text-xs ${connectionTestOk ? 'text-green-600' : 'text-red-600'}`}>
+                                    {connectionTestMessage}
+                                </p>
+                            )}
+                        </div>
+                    )}
 
                     {requiresApiKey && (
                         <div>
@@ -180,11 +294,18 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                             </Label>
                             <div className="relative mx-1">
                                 <Input
-                                    type={showApiKey ? "text" : "password"}
-                                    className={`pr-24 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 ${isApiKeyLocked ? 'bg-gray-100 cursor-not-allowed' : ''
-                                        }`}
+                                    type={showApiKey ? 'text' : 'password'}
+                                    className={`pr-24 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 ${isApiKeyLocked ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                                     value={apiKey || ''}
-                                    onChange={(e) => setApiKey(e.target.value)}
+                                    onChange={(e) => {
+                                        setApiKey(e.target.value);
+                                        setTranscriptModelConfig({
+                                            ...transcriptModelConfig,
+                                            provider: uiProvider,
+                                            apiKey: e.target.value,
+                                            openaiEndpoint,
+                                        });
+                                    }}
                                     disabled={isApiKeyLocked}
                                     onClick={handleInputClick}
                                     placeholder="Enter your API key"
@@ -201,9 +322,8 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                         variant="ghost"
                                         size="icon"
                                         onClick={() => setIsApiKeyLocked(!isApiKeyLocked)}
-                                        className={`transition-colors duration-200 ${isLockButtonVibrating ? 'animate-vibrate text-red-500' : ''
-                                            }`}
-                                        title={isApiKeyLocked ? "Unlock to edit" : "Lock to prevent editing"}
+                                        className={`transition-colors duration-200 ${isLockButtonVibrating ? 'animate-vibrate text-red-500' : ''}`}
+                                        title={isApiKeyLocked ? 'Unlock to edit' : 'Lock to prevent editing'}
                                     >
                                         {isApiKeyLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
                                     </Button>
@@ -221,14 +341,6 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                     )}
                 </div>
             </div>
-        </div >
-    )
+        </div>
+    );
 }
-
-
-
-
-
-
-
-

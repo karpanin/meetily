@@ -39,6 +39,7 @@ export default function SettingsPage() {
           setTranscriptModelConfig({
             provider: config.provider || 'localWhisper',
             model: config.model || 'large-v3',
+            openaiEndpoint: config.openaiEndpoint || null,
             apiKey: config.apiKey || null
           });
         }

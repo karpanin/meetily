@@ -24,7 +24,7 @@ pub struct SaveTranscriptConfigRequest {
 
 pub struct SettingsRepository;
 
-// Transcript providers: localWhisper, deepgram, elevenLabs, groq, openai
+// Transcript providers: localWhisper, parakeet, deepgram, elevenLabs, groq, openai, openaiCompatible
 // Summary providers: openai, claude, ollama, groq, added openrouter
 // NOTE: Handle data exclusion in the higher layer as this is database abstraction layer(using SELECT *)
 
@@ -154,18 +154,21 @@ impl SettingsRepository {
         pool: &SqlitePool,
         provider: &str,
         model: &str,
+        openai_endpoint: Option<&str>,
     ) -> std::result::Result<(), sqlx::Error> {
         sqlx::query(
             r#"
-            INSERT INTO transcript_settings (id, provider, model)
-            VALUES ('1', $1, $2)
+            INSERT INTO transcript_settings (id, provider, model, openaiEndpoint)
+            VALUES ('1', $1, $2, $3)
             ON CONFLICT(id) DO UPDATE SET
                 provider = excluded.provider,
-                model = excluded.model
+                model = excluded.model,
+                openaiEndpoint = excluded.openaiEndpoint
             "#,
         )
         .bind(provider)
         .bind(model)
+        .bind(openai_endpoint)
         .execute(pool)
         .await?;
 
@@ -183,7 +186,7 @@ impl SettingsRepository {
             "deepgram" => "deepgramApiKey",
             "elevenLabs" => "elevenLabsApiKey",
             "groq" => "groqApiKey",
-            "openai" => "openaiApiKey",
+            "openai" | "openaiCompatible" => "openaiApiKey",
             _ => {
                 return Err(sqlx::Error::Protocol(
                     format!("Invalid provider: {}", provider).into(),
@@ -215,7 +218,7 @@ impl SettingsRepository {
             "deepgram" => "deepgramApiKey",
             "elevenLabs" => "elevenLabsApiKey",
             "groq" => "groqApiKey",
-            "openai" => "openaiApiKey",
+            "openai" | "openaiCompatible" => "openaiApiKey",
             _ => {
                 return Err(sqlx::Error::Protocol(
                     format!("Invalid provider: {}", provider).into(),

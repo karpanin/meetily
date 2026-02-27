@@ -100,6 +100,8 @@ pub struct GetApiKeyRequest {
 pub struct TranscriptConfig {
     pub provider: String,
     pub model: String,
+    #[serde(rename = "openaiEndpoint")]
+    pub openai_endpoint: Option<String>,
     #[serde(rename = "apiKey")]
     pub api_key: Option<String>,
 }
@@ -108,6 +110,8 @@ pub struct TranscriptConfig {
 pub struct SaveTranscriptConfigRequest {
     pub provider: String,
     pub model: String,
+    #[serde(rename = "openaiEndpoint")]
+    pub openai_endpoint: Option<String>,
     #[serde(rename = "apiKey")]
     pub api_key: Option<String>,
 }
@@ -619,6 +623,7 @@ pub async fn api_get_transcript_config<R: Runtime>(
                     Ok(Some(TranscriptConfig {
                         provider: config.provider,
                         model: config.model,
+                        openai_endpoint: config.openai_endpoint,
                         api_key,
                     }))
                 }
@@ -637,6 +642,7 @@ pub async fn api_get_transcript_config<R: Runtime>(
             Ok(Some(TranscriptConfig {
                 provider: "parakeet".to_string(),
                 model: "parakeet-tdt-0.6b-v3-int8".to_string(),
+                openai_endpoint: None,
                 api_key: None,
             }))
         }
@@ -653,6 +659,7 @@ pub async fn api_save_transcript_config<R: Runtime>(
     state: tauri::State<'_, AppState>,
     provider: String,
     model: String,
+    openai_endpoint: Option<String>,
     api_key: Option<String>,
     _auth_token: Option<String>,
 ) -> Result<serde_json::Value, String> {
@@ -662,7 +669,24 @@ pub async fn api_save_transcript_config<R: Runtime>(
     );
     let pool = state.db_manager.pool();
 
-    if let Err(e) = SettingsRepository::save_transcript_config(pool, &provider, &model).await {
+    if provider == "openaiCompatible" {
+        let endpoint_valid = openai_endpoint
+            .as_deref()
+            .map(|e| e.starts_with("http://") || e.starts_with("https://"))
+            .unwrap_or(false);
+        if !endpoint_valid {
+            return Err("OpenAI-compatible endpoint must start with http:// or https://".to_string());
+        }
+    }
+
+    if let Err(e) = SettingsRepository::save_transcript_config(
+        pool,
+        &provider,
+        &model,
+        openai_endpoint.as_deref(),
+    )
+    .await
+    {
         log_error!("Failed to save transcript config: {}", e);
         return Err(e.to_string());
     }
@@ -1376,6 +1400,122 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
                 Err("Connection timed out. Please check the endpoint URL.".to_string())
             } else if e.is_connect() {
                 Err("Could not connect to endpoint. Please verify the URL is correct and the server is running.".to_string())
+            } else {
+                Err(format!("Connection failed: {}", e))
+            }
+        }
+    }
+}
+
+/// Tests the connection to an OpenAI-compatible transcription endpoint.
+/// Makes a small multipart request to `{endpoint}/audio/transcriptions`.
+#[tauri::command]
+pub async fn api_test_openai_compatible_transcription_connection<R: Runtime>(
+    _app: AppHandle<R>,
+    endpoint: String,
+    api_key: Option<String>,
+    model: String,
+) -> Result<serde_json::Value, String> {
+    log_info!(
+        "api_test_openai_compatible_transcription_connection called: endpoint='{}', model='{}'",
+        &endpoint,
+        &model
+    );
+
+    let endpoint = endpoint.trim().to_string();
+    let model = model.trim().to_string();
+
+    if endpoint.is_empty() {
+        return Err("Endpoint is required".to_string());
+    }
+    if model.is_empty() {
+        return Err("Model is required".to_string());
+    }
+    if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+        return Err("Endpoint must start with http:// or https://".to_string());
+    }
+
+    // Build minimal 16kHz mono PCM16 WAV (0.5s silence)
+    let sample_rate: u32 = 16_000;
+    let channels: u16 = 1;
+    let bits_per_sample: u16 = 16;
+    let samples: usize = 8_000;
+    let byte_rate: u32 = sample_rate * channels as u32 * (bits_per_sample as u32 / 8);
+    let block_align: u16 = channels * (bits_per_sample / 8);
+    let data_size: u32 = (samples * 2) as u32;
+    let riff_size: u32 = 36 + data_size;
+
+    let mut wav = Vec::with_capacity((44 + data_size) as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&riff_size.to_le_bytes());
+    wav.extend_from_slice(b"WAVE");
+    wav.extend_from_slice(b"fmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes());
+    wav.extend_from_slice(&1u16.to_le_bytes());
+    wav.extend_from_slice(&channels.to_le_bytes());
+    wav.extend_from_slice(&sample_rate.to_le_bytes());
+    wav.extend_from_slice(&byte_rate.to_le_bytes());
+    wav.extend_from_slice(&block_align.to_le_bytes());
+    wav.extend_from_slice(&bits_per_sample.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_size.to_le_bytes());
+    wav.resize((44 + data_size) as usize, 0);
+
+    let url = format!("{}/audio/transcriptions", endpoint.trim_end_matches('/'));
+
+    let part = reqwest::multipart::Part::bytes(wav)
+        .file_name("test.wav")
+        .mime_str("audio/wav")
+        .map_err(|e| format!("Failed to create multipart file part: {}", e))?;
+    let form = reqwest::multipart::Form::new()
+        .part("file", part)
+        .text("model", model);
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let mut request = client.post(&url).multipart(form);
+    if let Some(key) = api_key.filter(|k| !k.trim().is_empty()) {
+        request = request.header("Authorization", format!("Bearer {}", key.trim()));
+    }
+
+    match request.send().await {
+        Ok(response) => {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+
+            if status.is_success() {
+                return Ok(serde_json::json!({
+                    "status": "success",
+                    "message": "Connection successful: transcription endpoint is reachable",
+                    "http_status": status.as_u16()
+                }));
+            }
+
+            if status.as_u16() == 401 || status.as_u16() == 403 {
+                return Err(format!("Authentication failed (HTTP {}): check API key", status));
+            }
+            if status.as_u16() == 404 {
+                return Err("Endpoint is reachable but '/audio/transcriptions' was not found (HTTP 404)".to_string());
+            }
+
+            let truncated = if body.len() > 500 {
+                format!("{}...", &body[..500])
+            } else {
+                body
+            };
+            Err(format!(
+                "Connection failed with HTTP {}: {}",
+                status, truncated
+            ))
+        }
+        Err(e) => {
+            if e.is_timeout() {
+                Err("Connection timed out. Please check endpoint URL and server health.".to_string())
+            } else if e.is_connect() {
+                Err("Could not connect to endpoint. Verify URL/port and that server is running.".to_string())
             } else {
                 Err(format!("Connection failed: {}", e))
             }

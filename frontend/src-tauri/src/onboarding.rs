@@ -193,6 +193,7 @@ pub async fn complete_onboarding<R: Runtime>(
         pool,
         "parakeet",
         "parakeet-tdt-0.6b-v3-int8",
+        None,
     ).await {
         error!("Failed to save transcription model config: {}", e);
         return Err(format!("Failed to save transcription model config: {}", e));
