@@ -134,6 +134,46 @@ impl OpenAICompatibleProvider {
 
         (final_text, final_speaker)
     }
+
+    async fn send_transcription_request(
+        &self,
+        url: &str,
+        wav_bytes: Vec<u8>,
+        language: Option<String>,
+        file_field_name: &str,
+        include_verbose_json: bool,
+    ) -> std::result::Result<reqwest::Response, TranscriptionError> {
+        let audio_part = Part::bytes(wav_bytes)
+            .file_name("chunk.wav")
+            .mime_str("audio/wav")
+            .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))?;
+
+        let mut form = Form::new()
+            .part(file_field_name.to_string(), audio_part)
+            .text("model", self.model.clone());
+
+        if let Some(lang) = language {
+            form = form.text("language", lang);
+        }
+        if include_verbose_json {
+            form = form.text("response_format", "verbose_json");
+        }
+
+        let mut request = self
+            .client
+            .post(url)
+            .timeout(Duration::from_secs(45))
+            .multipart(form);
+
+        if let Some(api_key) = &self.api_key {
+            request = request.bearer_auth(api_key);
+        }
+
+        request
+            .send()
+            .await
+            .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))
+    }
 }
 
 #[async_trait]
@@ -160,72 +200,64 @@ impl TranscriptionProvider for OpenAICompatibleProvider {
             }
         });
 
-        let send_request = |include_verbose_json: bool| {
-            let wav_bytes = wav_bytes.clone();
-            let normalized_language = normalized_language.clone();
-            async move {
-                let audio_part = Part::bytes(wav_bytes)
-                    .file_name("chunk.wav")
-                    .mime_str("audio/wav")
-                    .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))?;
-
-                let mut form = Form::new()
-                    .part("file", audio_part)
-                    .text("model", self.model.clone());
-
-                if let Some(lang) = normalized_language {
-                    form = form.text("language", lang);
-                }
-                if include_verbose_json {
-                    form = form.text("response_format", "verbose_json");
-                }
-
-                let url = format!("{}/audio/transcriptions", self.endpoint);
-                let mut request = self
-                    .client
-                    .post(url)
-                    .timeout(Duration::from_secs(45))
-                    .multipart(form);
-
-                if let Some(api_key) = &self.api_key {
-                    request = request.bearer_auth(api_key);
-                }
-
-                request
-                    .send()
-                    .await
-                    .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))
-            }
+        let primary_url = format!("{}/audio/transcriptions", self.endpoint);
+        let fallback_v1_url = if self.endpoint.ends_with("/v1") {
+            None
+        } else {
+            Some(format!("{}/v1/audio/transcriptions", self.endpoint))
         };
 
-        let mut response = send_request(true).await?;
-        if !response.status().is_success() {
+        let mut attempt_plan: Vec<(String, &'static str, bool)> = vec![
+            (primary_url.clone(), "file", true),
+            (primary_url.clone(), "file", false),
+            (primary_url.clone(), "audio", false),
+            (primary_url.clone(), "audio_file", false),
+        ];
+        if let Some(v1_url) = fallback_v1_url {
+            attempt_plan.push((v1_url.clone(), "file", false));
+            attempt_plan.push((v1_url.clone(), "audio", false));
+            attempt_plan.push((v1_url, "audio_file", false));
+        }
+
+        let mut last_error = "Unknown transcription error".to_string();
+        let mut payload: Option<Value> = None;
+        for (url, file_field_name, include_verbose_json) in attempt_plan {
+            let response = self
+                .send_transcription_request(
+                    &url,
+                    wav_bytes.clone(),
+                    normalized_language.clone(),
+                    file_field_name,
+                    include_verbose_json,
+                )
+                .await?;
+
+            if response.status().is_success() {
+                payload = Some(
+                    response
+                        .json::<Value>()
+                        .await
+                        .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))?,
+                );
+                break;
+            }
+
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
+            let body_lower = body.to_lowercase();
+            let retriable = status.as_u16() == 400 || status.as_u16() == 415 || status.as_u16() == 422;
+            let missing_file = body_lower.contains("field required")
+                || body_lower.contains("\"file\"")
+                || body_lower.contains("'file'");
 
-            if status.as_u16() == 400 || status.as_u16() == 422 {
-                response = send_request(false).await?;
-            } else {
-                return Err(TranscriptionError::EngineFailed(format!(
-                    "HTTP {}: {}",
-                    status, body
-                )));
+            last_error = format!("HTTP {}: {}", status, body);
+            if !retriable || (!missing_file && file_field_name != "file") {
+                break;
             }
         }
 
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(TranscriptionError::EngineFailed(format!(
-                "HTTP {}: {}",
-                status, body
-            )));
-        }
+        let payload = payload.ok_or_else(|| TranscriptionError::EngineFailed(last_error))?;
 
-        let payload = response
-            .json::<Value>()
-            .await
-            .map_err(|e| TranscriptionError::EngineFailed(e.to_string()))?;
         let (text, speaker) = Self::extract_text_and_speaker(&payload);
 
         Ok(TranscriptResult {
