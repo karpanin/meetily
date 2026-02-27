@@ -8,7 +8,7 @@ import { Label } from './ui/label';
 import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 import { Switch } from './ui/switch';
 import { useConfig } from '@/contexts/ConfigContext';
-import { safeInvoke } from '@/lib/tauriRuntime';
+import { isTauriUnavailableError, safeInvoke } from '@/lib/tauriRuntime';
 
 interface SummaryModelSettingsProps {
   refetchTrigger?: number;
@@ -53,7 +53,9 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
       setIsApiKeyLocked(false);
     } catch (error) {
       console.error('Failed to load model settings:', error);
-      toast.error('Failed to load model settings');
+      if (!isTauriUnavailableError(error)) {
+        toast.error('Failed to load model settings');
+      }
     }
   };
 
@@ -114,7 +116,11 @@ export function SummaryModelSettings({ refetchTrigger }: SummaryModelSettingsPro
       toast.success('Model settings saved successfully');
     } catch (error) {
       console.error('Error saving model settings:', error);
-      toast.error('Failed to save model settings');
+      toast.error(
+        isTauriUnavailableError(error)
+          ? 'Saving settings is available only in desktop (Tauri) runtime'
+          : 'Failed to save model settings'
+      );
     }
   };
 
