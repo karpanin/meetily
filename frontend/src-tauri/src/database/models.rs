@@ -116,6 +116,9 @@ pub struct TranscriptSetting {
     #[sqlx(rename = "openaiEndpoint")]
     #[serde(rename = "openaiEndpoint")]
     pub openai_endpoint: Option<String>,
+    #[sqlx(rename = "diarizationEnabled")]
+    #[serde(rename = "diarizationEnabled")]
+    pub diarization_enabled: Option<bool>,
     #[sqlx(rename = "whisperApiKey")]
     #[serde(rename = "whisperApiKey")]
     pub whisper_api_key: Option<String>,

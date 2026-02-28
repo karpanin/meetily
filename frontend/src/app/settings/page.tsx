@@ -40,7 +40,8 @@ export default function SettingsPage() {
             provider: config.provider || 'openaiCompatible',
             model: config.model || 'whisper-1',
             openaiEndpoint: config.openaiEndpoint || null,
-            apiKey: config.apiKey || null
+            apiKey: config.apiKey || null,
+            diarizationEnabled: !!config.diarizationEnabled,
           });
         }
       } catch (error) {

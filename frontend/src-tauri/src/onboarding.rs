@@ -194,6 +194,7 @@ pub async fn complete_onboarding<R: Runtime>(
         "openaiCompatible",
         "whisper-1",
         None,
+        false,
     ).await {
         error!("Failed to save transcription model config: {}", e);
         return Err(format!("Failed to save transcription model config: {}", e));

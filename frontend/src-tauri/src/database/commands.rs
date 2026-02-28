@@ -207,6 +207,7 @@ pub async fn initialize_fresh_database(app: AppHandle) -> Result<(), String> {
         "openaiCompatible",
         "whisper-1",
         None,
+        false,
     ).await {
         error!("Failed to set default transcription model config: {}", e);
     }

@@ -71,6 +71,7 @@ const Sidebar: React.FC = () => {
     provider: 'openaiCompatible',
     model: 'whisper-1',
     openaiEndpoint: null,
+    diarizationEnabled: false,
   });
   const [settingsSaveSuccess, setSettingsSaveSuccess] = useState<boolean | null>(null);
 
@@ -213,7 +214,8 @@ const Sidebar: React.FC = () => {
         provider: configToSave.provider,
         model: configToSave.model,
         openaiEndpoint: configToSave.openaiEndpoint ?? null,
-        apiKey: configToSave.apiKey ?? null
+        apiKey: configToSave.apiKey ?? null,
+        diarizationEnabled: !!configToSave.diarizationEnabled,
       };
       console.log('Saving transcript config with payload:', payload);
 
@@ -222,6 +224,7 @@ const Sidebar: React.FC = () => {
         model: payload.model,
         openaiEndpoint: payload.openaiEndpoint,
         apiKey: payload.apiKey,
+        diarizationEnabled: payload.diarizationEnabled,
       });
 
 

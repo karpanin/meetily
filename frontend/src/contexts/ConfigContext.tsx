@@ -104,7 +104,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     provider: 'openaiCompatible',
     model: 'whisper-1',
     openaiEndpoint: null,
-    apiKey: null
+    apiKey: null,
+    diarizationEnabled: false,
   });
 
   // Provider-specific API keys (loaded once at startup)
@@ -190,7 +191,8 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
             provider: config.provider || 'openaiCompatible',
             model: config.model || 'whisper-1',
             openaiEndpoint: config.openaiEndpoint || null,
-            apiKey: config.apiKey || null
+            apiKey: config.apiKey || null,
+            diarizationEnabled: !!config.diarizationEnabled,
           });
         }
       } catch (error) {

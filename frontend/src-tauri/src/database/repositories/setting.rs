@@ -164,6 +164,13 @@ impl SettingsRepository {
         pool: &SqlitePool,
     ) -> std::result::Result<Option<TranscriptSetting>, sqlx::Error> {
         Self::ensure_column_exists(pool, "transcript_settings", "openaiEndpoint", "TEXT").await?;
+        Self::ensure_column_exists(
+            pool,
+            "transcript_settings",
+            "diarizationEnabled",
+            "INTEGER DEFAULT 0",
+        )
+        .await?;
 
         let setting =
             sqlx::query_as::<_, TranscriptSetting>("SELECT * FROM transcript_settings LIMIT 1")
@@ -178,22 +185,32 @@ impl SettingsRepository {
         provider: &str,
         model: &str,
         openai_endpoint: Option<&str>,
+        diarization_enabled: bool,
     ) -> std::result::Result<(), sqlx::Error> {
         Self::ensure_column_exists(pool, "transcript_settings", "openaiEndpoint", "TEXT").await?;
+        Self::ensure_column_exists(
+            pool,
+            "transcript_settings",
+            "diarizationEnabled",
+            "INTEGER DEFAULT 0",
+        )
+        .await?;
 
         sqlx::query(
             r#"
-            INSERT INTO transcript_settings (id, provider, model, openaiEndpoint)
-            VALUES ('1', $1, $2, $3)
+            INSERT INTO transcript_settings (id, provider, model, openaiEndpoint, diarizationEnabled)
+            VALUES ('1', $1, $2, $3, $4)
             ON CONFLICT(id) DO UPDATE SET
                 provider = excluded.provider,
                 model = excluded.model,
-                openaiEndpoint = excluded.openaiEndpoint
+                openaiEndpoint = excluded.openaiEndpoint,
+                diarizationEnabled = excluded.diarizationEnabled
             "#,
         )
         .bind(provider)
         .bind(model)
         .bind(openai_endpoint)
+        .bind(diarization_enabled)
         .execute(pool)
         .await?;
 

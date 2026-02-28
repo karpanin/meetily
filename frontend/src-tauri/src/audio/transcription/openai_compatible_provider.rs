@@ -13,11 +13,17 @@ pub struct OpenAICompatibleProvider {
     endpoint: String,
     model: String,
     api_key: Option<String>,
+    diarization_enabled: bool,
     client: reqwest::Client,
 }
 
 impl OpenAICompatibleProvider {
-    pub fn new(endpoint: String, model: String, api_key: Option<String>) -> Self {
+    pub fn new(
+        endpoint: String,
+        model: String,
+        api_key: Option<String>,
+        diarization_enabled: bool,
+    ) -> Self {
         Self {
             endpoint: endpoint.trim_end_matches('/').to_string(),
             model,
@@ -29,6 +35,7 @@ impl OpenAICompatibleProvider {
                     Some(trimmed)
                 }
             }),
+            diarization_enabled,
             client: reqwest::Client::new(),
         }
     }
@@ -157,6 +164,9 @@ impl OpenAICompatibleProvider {
         }
         if include_verbose_json {
             form = form.text("response_format", "verbose_json");
+        }
+        if self.diarization_enabled {
+            form = form.text("diarize", "true");
         }
 
         let mut request = self

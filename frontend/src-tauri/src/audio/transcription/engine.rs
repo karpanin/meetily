@@ -99,6 +99,7 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
         endpoint.to_string(),
         model.to_string(),
         config.api_key,
+        config.diarization_enabled,
     );
 
     Ok(TranscriptionEngine::Provider(Arc::new(provider)))

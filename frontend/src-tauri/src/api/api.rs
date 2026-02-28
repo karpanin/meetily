@@ -104,6 +104,8 @@ pub struct TranscriptConfig {
     pub openai_endpoint: Option<String>,
     #[serde(rename = "apiKey")]
     pub api_key: Option<String>,
+    #[serde(rename = "diarizationEnabled", default)]
+    pub diarization_enabled: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -114,6 +116,8 @@ pub struct SaveTranscriptConfigRequest {
     pub openai_endpoint: Option<String>,
     #[serde(rename = "apiKey")]
     pub api_key: Option<String>,
+    #[serde(rename = "diarizationEnabled", default)]
+    pub diarization_enabled: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -629,6 +633,7 @@ pub async fn api_get_transcript_config<R: Runtime>(
                         model: config.model,
                         openai_endpoint: config.openai_endpoint,
                         api_key,
+                        diarization_enabled: config.diarization_enabled.unwrap_or(false),
                     }))
                 }
                 Err(e) => {
@@ -648,6 +653,7 @@ pub async fn api_get_transcript_config<R: Runtime>(
                 model: "whisper-1".to_string(),
                 openai_endpoint: None,
                 api_key: None,
+                diarization_enabled: false,
             }))
         }
         Err(e) => {
@@ -665,6 +671,7 @@ pub async fn api_save_transcript_config<R: Runtime>(
     model: String,
     openai_endpoint: Option<String>,
     api_key: Option<String>,
+    diarization_enabled: Option<bool>,
     _auth_token: Option<String>,
 ) -> Result<serde_json::Value, String> {
     log_info!(
@@ -693,12 +700,14 @@ pub async fn api_save_transcript_config<R: Runtime>(
             return Err("OpenAI-compatible endpoint must start with http:// or https://".to_string());
         }
     }
+    let diarization_enabled = diarization_enabled.unwrap_or(false);
 
     if let Err(e) = SettingsRepository::save_transcript_config(
         pool,
         &provider,
         &model,
         openai_endpoint.as_deref(),
+        diarization_enabled,
     )
     .await
     {

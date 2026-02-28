@@ -4,6 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Input } from './ui/input';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
+import { Switch } from './ui/switch';
 import { Eye, EyeOff, Lock, Unlock } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -12,6 +13,7 @@ export interface TranscriptModelProps {
   model: string;
   openaiEndpoint?: string | null;
   apiKey?: string | null;
+  diarizationEnabled?: boolean;
 }
 
 export interface TranscriptSettingsProps {
@@ -58,6 +60,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
         model,
         openaiEndpoint: endpoint,
         apiKey: normalizedApiKey,
+        diarizationEnabled: !!transcriptModelConfig.diarizationEnabled,
       });
 
       setTranscriptModelConfig({
@@ -65,6 +68,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
         model,
         openaiEndpoint: endpoint,
         apiKey: normalizedApiKey,
+        diarizationEnabled: !!transcriptModelConfig.diarizationEnabled,
       });
       toast.success('Model settings saved successfully');
     } catch (error) {
@@ -177,6 +181,29 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
           placeholder="http://your-server:8000/v1"
         />
         <p className="text-xs text-gray-500 mt-1">Requests will be sent to /audio/transcriptions</p>
+      </div>
+
+      <div className="rounded-md border p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-sm font-medium text-gray-700">Speaker Diarization</Label>
+            <p className="text-xs text-gray-500">
+              Enable to include speaker labels in transcript when provider supports diarization.
+            </p>
+          </div>
+          <Switch
+            checked={!!transcriptModelConfig.diarizationEnabled}
+            onCheckedChange={(checked) =>
+              setTranscriptModelConfig({
+                ...transcriptModelConfig,
+                provider: 'openaiCompatible',
+                diarizationEnabled: checked,
+                openaiEndpoint,
+                apiKey,
+              })
+            }
+          />
+        </div>
       </div>
 
       <div>
