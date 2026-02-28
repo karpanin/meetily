@@ -5,7 +5,6 @@ import { Source_Sans_3 } from 'next/font/google'
 import Sidebar from '@/components/Sidebar'
 import { SidebarProvider } from '@/components/Sidebar/SidebarProvider'
 import MainContent from '@/components/MainContent'
-import AnalyticsProvider from '@/components/AnalyticsProvider'
 import { Toaster } from 'sonner'
 import "sonner/dist/styles.css"
 import { useEffect } from 'react'
@@ -57,31 +56,29 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${sourceSans3.variable} font-sans antialiased`}>
-        <AnalyticsProvider>
-          <RecordingStateProvider>
-            <TranscriptProvider>
-              <ConfigProvider>
-                <OllamaDownloadProvider>
-                  <UpdateCheckProvider>
-                    <SidebarProvider>
-                      <TooltipProvider>
-                        <RecordingPostProcessingProvider>
-                          {/* Download progress toast provider - listens for background downloads */}
-                          <DownloadProgressToastProvider />
-                          <div className="flex">
-                            <Sidebar />
-                            <MainContent>{children}</MainContent>
-                          </div>
-                        </RecordingPostProcessingProvider>
-                      </TooltipProvider>
-                    </SidebarProvider>
-                  </UpdateCheckProvider>
+        <RecordingStateProvider>
+          <TranscriptProvider>
+            <ConfigProvider>
+              <OllamaDownloadProvider>
+                <UpdateCheckProvider>
+                  <SidebarProvider>
+                    <TooltipProvider>
+                      <RecordingPostProcessingProvider>
+                        {/* Download progress toast provider - listens for background downloads */}
+                        <DownloadProgressToastProvider />
+                        <div className="flex">
+                          <Sidebar />
+                          <MainContent>{children}</MainContent>
+                        </div>
+                      </RecordingPostProcessingProvider>
+                    </TooltipProvider>
+                  </SidebarProvider>
+                </UpdateCheckProvider>
 
-                </OllamaDownloadProvider>
-              </ConfigProvider>
-            </TranscriptProvider>
-          </RecordingStateProvider>
-        </AnalyticsProvider>
+              </OllamaDownloadProvider>
+            </ConfigProvider>
+          </TranscriptProvider>
+        </RecordingStateProvider>
         <Toaster position="bottom-center" richColors closeButton />
       </body>
     </html>
