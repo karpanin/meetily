@@ -39,6 +39,7 @@ pub mod api;
 pub mod audio;
 pub mod console_utils;
 pub mod database;
+pub mod language_preferences;
 pub mod notifications;
 pub mod ollama;
 pub mod onboarding;
@@ -369,21 +370,58 @@ async fn start_recording_with_devices_and_meeting<R: Runtime>(
 
 // Language preference commands
 #[tauri::command]
-async fn get_language_preference() -> Result<String, String> {
-    let language = LANGUAGE_PREFERENCE
-        .lock()
-        .map_err(|e| format!("Failed to get language preference: {}", e))?;
-    log_info!("Retrieved language preference: {}", &*language);
-    Ok(language.clone())
+async fn get_language_preference<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<String, String> {
+    // Try to load from local Tauri store first
+    match language_preferences::load_language_preference(&app).await {
+        Ok(lang) => {
+            log_info!("Retrieved language preference from store: {}", lang);
+            Ok(lang)
+        }
+        Err(_) => {
+            // Fallback to backend API
+            log_info!("Failed to load from store, attempting to fetch from backend");
+            match language_preferences::fetch_language_preference_from_backend().await {
+                Ok(lang) => {
+                    log_info!("Retrieved language preference from backend: {}", lang);
+                    // Save to local store for future use
+                    let _ = language_preferences::save_language_preference(&app, &lang).await;
+                    Ok(lang)
+                }
+                Err(e) => {
+                    log_error!("Failed to get language preference: {}", e);
+                    Ok("ru".to_string()) // Default to Russian
+                }
+            }
+        }
+    }
 }
 
 #[tauri::command]
-async fn set_language_preference(language: String) -> Result<(), String> {
-    let mut lang_pref = LANGUAGE_PREFERENCE
-        .lock()
-        .map_err(|e| format!("Failed to set language preference: {}", e))?;
+async fn set_language_preference<R: Runtime>(
+    app: AppHandle<R>,
+    language: String,
+) -> Result<(), String> {
     log_info!("Setting language preference to: {}", language);
-    *lang_pref = language;
+
+    // Save to local Tauri store
+    if let Err(e) = language_preferences::save_language_preference(&app, &language).await {
+        log_error!("Failed to save language preference to store: {}", e);
+        return Err(format!("Failed to save language preference: {}", e));
+    }
+
+    // Also update the LANGUAGE_PREFERENCE static variable for immediate use
+    if let Ok(mut lang_pref) = LANGUAGE_PREFERENCE.lock() {
+        *lang_pref = language.clone();
+    }
+
+    // Sync with backend API
+    if let Err(e) = language_preferences::save_language_preference_to_backend(&language).await {
+        log_error!("Warning: Failed to sync language preference with backend: {}", e);
+        // Don't return error - local save succeeded
+    }
+
     Ok(())
 }
 
@@ -448,6 +486,27 @@ pub fn run() {
                     Err(e) => {
                         log::warn!("Failed to initialize ModelManager at startup: {}", e);
                         log::warn!("ModelManager will be lazy-initialized on first use");
+                    }
+                }
+            });
+
+            // Initialize language preference on startup
+            let app_handle_for_lang = _app.handle().clone();
+            tauri::async_runtime::block_on(async {
+                match language_preferences::load_language_preference(&app_handle_for_lang).await {
+                    Ok(lang) => {
+                        log_info!("Loaded language preference on startup: {}", lang);
+                        // Update the static variable
+                        if let Ok(mut lang_pref) = LANGUAGE_PREFERENCE.lock() {
+                            *lang_pref = lang;
+                        }
+                    }
+                    Err(e) => {
+                        log_error!("Failed to load language preference on startup: {}", e);
+                        log_info!("Using default language: ru");
+                        if let Ok(mut lang_pref) = LANGUAGE_PREFERENCE.lock() {
+                            *lang_pref = "ru".to_string();
+                        }
                     }
                 }
             });

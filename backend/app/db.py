@@ -31,11 +31,11 @@ class DatabaseManager:
             # Run legacy initialization (handles all table creation)
             logger.info("Initializing database tables...")
             self._legacy_init_db()
-            
+
             # Validate schema integrity
             logger.info("Validating schema integrity...")
             self.schema_validator.validate_schema()
-            
+
         except Exception as e:
             logger.error(f"Database initialization failed: {str(e)}")
             raise
@@ -46,7 +46,7 @@ class DatabaseManager:
         """Legacy database initialization (for backward compatibility)"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
+
             # Create meetings table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS meetings (
@@ -64,7 +64,7 @@ class DatabaseManager:
                 logger.info("Added folder_path column to meetings table")
             except sqlite3.OperationalError:
                 pass  # Column already exists
-            
+
             # Create transcripts table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS transcripts (
@@ -95,7 +95,7 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE transcripts ADD COLUMN duration REAL")
             except sqlite3.OperationalError:
                 pass  # Column already exists
-            
+
             # Create summary_processes table (keeping existing functionality)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS summary_processes (
@@ -156,6 +156,23 @@ class DatabaseManager:
                 )
             """)
 
+            # Create user_preferences table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    id TEXT PRIMARY KEY,
+                    language_code TEXT NOT NULL DEFAULT 'ru',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
+            # Migration: Add language_code column to existing user_preferences table
+            try:
+                cursor.execute("ALTER TABLE user_preferences ADD COLUMN language_code TEXT DEFAULT 'ru'")
+                logger.info("Added language_code column to user_preferences table")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
             conn.commit()
 
     @asynccontextmanager
@@ -170,59 +187,59 @@ class DatabaseManager:
     async def create_process(self, meeting_id: str) -> str:
         """Create a new process entry or update existing one and return its ID"""
         now = datetime.utcnow().isoformat()
-        
+
         try:
             async with self._get_connection() as conn:
                 # Begin transaction
                 await conn.execute("BEGIN TRANSACTION")
-                
+
                 try:
                     # First try to update existing process
                     await conn.execute(
                         """
-                        UPDATE summary_processes 
+                        UPDATE summary_processes
                         SET status = ?, updated_at = ?, start_time = ?, error = NULL, result = NULL
                         WHERE meeting_id = ?
                         """,
                         ("PENDING", now, now, meeting_id)
                     )
-                    
+
                     # If no rows were updated, insert a new one
                     if conn.total_changes == 0:
                         await conn.execute(
                             "INSERT INTO summary_processes (meeting_id, status, created_at, updated_at, start_time) VALUES (?, ?, ?, ?, ?)",
                             (meeting_id, "PENDING", now, now, now)
                         )
-                    
+
                     await conn.commit()
                     logger.info(f"Successfully created/updated process for meeting_id: {meeting_id}")
-                    
+
                 except Exception as e:
                     await conn.rollback()
                     logger.error(f"Failed to create process for meeting_id {meeting_id}: {str(e)}", exc_info=True)
                     raise
-                    
+
         except Exception as e:
             logger.error(f"Database connection error in create_process: {str(e)}", exc_info=True)
             raise
-        
+
         return meeting_id
 
-    async def update_process(self, meeting_id: str, status: str, result: Optional[Dict] = None, error: Optional[str] = None, 
-                           chunk_count: Optional[int] = None, processing_time: Optional[float] = None, 
+    async def update_process(self, meeting_id: str, status: str, result: Optional[Dict] = None, error: Optional[str] = None,
+                           chunk_count: Optional[int] = None, processing_time: Optional[float] = None,
                            metadata: Optional[Dict] = None):
         """Update a process status and result"""
         now = datetime.utcnow().isoformat()
-        
+
         try:
             async with self._get_connection() as conn:
                 # Begin transaction
                 await conn.execute("BEGIN TRANSACTION")
-                
+
                 try:
                     update_fields = ["status = ?", "updated_at = ?"]
                     params = [status, now]
-                    
+
                     if result:
                         # Validate result can be JSON serialized
                         try:
@@ -232,21 +249,21 @@ class DatabaseManager:
                         except (TypeError, ValueError) as e:
                             logger.error(f"Failed to serialize result for meeting_id {meeting_id}: {str(e)}")
                             raise ValueError("Result data cannot be JSON serialized")
-                            
+
                     if error:
                         # Sanitize error message to prevent log injection
                         sanitized_error = str(error).replace('\n', ' ').replace('\r', '')[:1000]
                         update_fields.append("error = ?")
                         params.append(sanitized_error)
-                        
+
                     if chunk_count is not None:
                         update_fields.append("chunk_count = ?")
                         params.append(chunk_count)
-                        
+
                     if processing_time is not None:
                         update_fields.append("processing_time = ?")
                         params.append(processing_time)
-                        
+
                     if metadata:
                         # Validate metadata can be JSON serialized
                         try:
@@ -256,31 +273,31 @@ class DatabaseManager:
                         except (TypeError, ValueError) as e:
                             logger.error(f"Failed to serialize metadata for meeting_id {meeting_id}: {str(e)}")
                             # Don't fail the whole operation for metadata serialization issues
-                            
+
                     if status.upper() in ['COMPLETED', 'FAILED']:
                         update_fields.append("end_time = ?")
                         params.append(now)
-                        
+
                     params.append(meeting_id)
                     query = f"UPDATE summary_processes SET {', '.join(update_fields)} WHERE meeting_id = ?"
-                    
+
                     cursor = await conn.execute(query, params)
                     if cursor.rowcount == 0:
                         logger.warning(f"No process found to update for meeting_id: {meeting_id}")
-                        
+
                     await conn.commit()
                     logger.debug(f"Successfully updated process status to {status} for meeting_id: {meeting_id}")
-                    
+
                 except Exception as e:
                     await conn.rollback()
                     logger.error(f"Failed to update process for meeting_id {meeting_id}: {str(e)}", exc_info=True)
                     raise
-                    
+
         except Exception as e:
             logger.error(f"Database connection error in update_process: {str(e)}", exc_info=True)
             raise
 
-    async def save_transcript(self, meeting_id: str, transcript_text: str, model: str, model_name: str, 
+    async def save_transcript(self, meeting_id: str, transcript_text: str, model: str, model_name: str,
                             chunk_size: int, overlap: int):
         """Save transcript data"""
         # Input validation
@@ -292,36 +309,36 @@ class DatabaseManager:
             raise ValueError("Invalid chunk_size or overlap values")
         if len(transcript_text) > 10_000_000:  # 10MB limit
             raise ValueError("Transcript text too large (>10MB)")
-            
+
         now = datetime.utcnow().isoformat()
-        
+
         try:
             async with self._get_connection() as conn:
                 await conn.execute("BEGIN TRANSACTION")
-                
+
                 try:
                     # First try to update existing transcript
                     await conn.execute("""
-                        UPDATE transcript_chunks 
+                        UPDATE transcript_chunks
                         SET transcript_text = ?, model = ?, model_name = ?, chunk_size = ?, overlap = ?, created_at = ?
                         WHERE meeting_id = ?
                     """, (transcript_text, model, model_name, chunk_size, overlap, now, meeting_id))
-                    
+
                     # If no rows were updated, insert a new one
                     if conn.total_changes == 0:
                         await conn.execute("""
                             INSERT INTO transcript_chunks (meeting_id, transcript_text, model, model_name, chunk_size, overlap, created_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?)
                         """, (meeting_id, transcript_text, model, model_name, chunk_size, overlap, now))
-                    
+
                     await conn.commit()
                     logger.info(f"Successfully saved transcript for meeting_id: {meeting_id} (size: {len(transcript_text)} chars)")
-                    
+
                 except Exception as e:
                     await conn.rollback()
                     logger.error(f"Failed to save transcript for meeting_id {meeting_id}: {str(e)}", exc_info=True)
                     raise
-                    
+
         except Exception as e:
             logger.error(f"Database connection error in save_transcript: {str(e)}", exc_info=True)
             raise
@@ -336,23 +353,23 @@ class DatabaseManager:
                 SET title = ?, updated_at = ?
                 WHERE id = ?
             """, (meeting_name, now, meeting_id))
-            
+
             # Update transcript_chunks table
             await conn.execute("""
                 UPDATE transcript_chunks
                 SET meeting_name = ?
                 WHERE meeting_id = ?
             """, (meeting_name, meeting_id))
-            
+
             await conn.commit()
 
     async def get_transcript_data(self, meeting_id: str):
         """Get transcript data for a meeting"""
         async with self._get_connection() as conn:
             async with conn.execute("""
-                SELECT t.*, p.status, p.result, p.error 
-                FROM transcript_chunks t 
-                JOIN summary_processes p ON t.meeting_id = p.meeting_id 
+                SELECT t.*, p.status, p.result, p.error
+                FROM transcript_chunks t
+                JOIN summary_processes p ON t.meeting_id = p.meeting_id
                 WHERE t.meeting_id = ?
             """, (meeting_id,)) as cursor:
                 row = await cursor.fetchone()
@@ -420,10 +437,10 @@ class DatabaseManager:
                     WHERE id = ?
                 """, (meeting_id,))
                 meeting = await cursor.fetchone()
-                
+
                 if not meeting:
                     return None
-                
+
                 # Get all transcripts for this meeting with NEW timestamp fields
                 cursor = await conn.execute("""
                     SELECT transcript, timestamp, audio_start_time, audio_end_time, duration
@@ -481,48 +498,48 @@ class DatabaseManager:
         """Delete a meeting and all its associated data"""
         if not meeting_id or not meeting_id.strip():
             raise ValueError("meeting_id cannot be empty")
-            
+
         try:
             async with self._get_connection() as conn:
                 await conn.execute("BEGIN TRANSACTION")
-                
+
                 try:
                     # Check if meeting exists before deletion
                     cursor = await conn.execute("SELECT id FROM meetings WHERE id = ?", (meeting_id,))
                     meeting = await cursor.fetchone()
-                    
+
                     if not meeting:
                         logger.warning(f"Meeting {meeting_id} not found for deletion")
                         await conn.rollback()
                         return False
-                    
+
                     # Delete in proper order to respect foreign key constraints
                     # Delete from transcript_chunks
                     await conn.execute("DELETE FROM transcript_chunks WHERE meeting_id = ?", (meeting_id,))
-                    
+
                     # Delete from summary_processes
                     await conn.execute("DELETE FROM summary_processes WHERE meeting_id = ?", (meeting_id,))
-                    
+
                     # Delete from transcripts
                     await conn.execute("DELETE FROM transcripts WHERE meeting_id = ?", (meeting_id,))
-                    
+
                     # Delete from meetings
                     cursor = await conn.execute("DELETE FROM meetings WHERE id = ?", (meeting_id,))
-                    
+
                     if cursor.rowcount == 0:
                         logger.error(f"Failed to delete meeting {meeting_id} - no rows affected")
                         await conn.rollback()
                         return False
-                    
+
                     await conn.commit()
                     logger.info(f"Successfully deleted meeting {meeting_id} and all associated data")
                     return True
-                    
+
                 except Exception as e:
                     await conn.rollback()
                     logger.error(f"Failed to delete meeting {meeting_id}: {str(e)}", exc_info=True)
                     return False
-                    
+
         except Exception as e:
             logger.error(f"Database connection error in delete_meeting: {str(e)}", exc_info=True)
             return False
@@ -543,11 +560,11 @@ class DatabaseManager:
             raise ValueError("Model cannot be empty")
         if not whisperModel or not whisperModel.strip():
             raise ValueError("Whisper model cannot be empty")
-            
+
         try:
             async with self._get_connection() as conn:
                 await conn.execute("BEGIN TRANSACTION")
-                
+
                 try:
                     # Check if the configuration already exists
                     cursor = await conn.execute("SELECT id FROM settings")
@@ -555,9 +572,9 @@ class DatabaseManager:
                     if existing_config:
                         # Update existing configuration
                         await conn.execute("""
-                            UPDATE settings 
+                            UPDATE settings
                             SET provider = ?, model = ?, whisperModel = ?
-                            WHERE id = '1'    
+                            WHERE id = '1'
                         """, (provider, model, whisperModel))
                     else:
                         # Insert new configuration
@@ -565,15 +582,15 @@ class DatabaseManager:
                             INSERT INTO settings (id, provider, model, whisperModel)
                             VALUES (?, ?, ?, ?)
                         """, ('1', provider, model, whisperModel))
-                    
+
                     await conn.commit()
                     logger.info(f"Successfully saved model configuration: {provider}/{model}")
-                    
+
                 except Exception as e:
                     await conn.rollback()
                     logger.error(f"Failed to save model configuration: {str(e)}", exc_info=True)
                     raise
-                    
+
         except Exception as e:
             logger.error(f"Database connection error in save_model_config: {str(e)}", exc_info=True)
             raise
@@ -592,16 +609,16 @@ class DatabaseManager:
             api_key_name = "groqApiKey"
         elif provider == "ollama":
             api_key_name = "ollamaApiKey"
-            
+
         try:
             async with self._get_connection() as conn:
                 await conn.execute("BEGIN TRANSACTION")
-                
+
                 try:
                     # Check if settings row exists
                     cursor = await conn.execute("SELECT id FROM settings WHERE id = '1'")
                     existing_config = await cursor.fetchone()
-                    
+
                     if existing_config:
                         # Update existing configuration
                         await conn.execute(f"UPDATE settings SET {api_key_name} = ? WHERE id = '1'", (api_key,))
@@ -611,15 +628,15 @@ class DatabaseManager:
                             INSERT INTO settings (id, provider, model, whisperModel, {api_key_name})
                             VALUES (?, ?, ?, ?, ?)
                         """, ('1', 'openai', 'gpt-4o-2024-11-20', 'large-v3', api_key))
-                        
+
                     await conn.commit()
                     logger.info(f"Successfully saved API key for provider: {provider}")
-                    
+
                 except Exception as e:
                     await conn.rollback()
                     logger.error(f"Failed to save API key for provider {provider}: {str(e)}", exc_info=True)
                     raise
-                    
+
         except Exception as e:
             logger.error(f"Database connection error in save_api_key: {str(e)}", exc_info=True)
             raise
@@ -663,11 +680,11 @@ class DatabaseManager:
             raise ValueError("Provider cannot be empty")
         if not model or not model.strip():
             raise ValueError("Model cannot be empty")
-            
+
         try:
             async with self._get_connection() as conn:
                 await conn.execute("BEGIN TRANSACTION")
-                
+
                 try:
                     # Check if the configuration already exists
                     cursor = await conn.execute("SELECT id FROM transcript_settings")
@@ -675,7 +692,7 @@ class DatabaseManager:
                     if existing_config:
                         # Update existing configuration
                         await conn.execute("""
-                            UPDATE transcript_settings 
+                            UPDATE transcript_settings
                             SET provider = ?, model = ?
                             WHERE id = '1'
                         """, (provider, model))
@@ -685,15 +702,15 @@ class DatabaseManager:
                             INSERT INTO transcript_settings (id, provider, model)
                             VALUES (?, ?, ?)
                         """, ('1', provider, model))
-                    
+
                     await conn.commit()
                     logger.info(f"Successfully saved transcript configuration: {provider}/{model}")
-                    
+
                 except Exception as e:
                     await conn.rollback()
                     logger.error(f"Failed to save transcript configuration: {str(e)}", exc_info=True)
                     raise
-                    
+
         except Exception as e:
             logger.error(f"Database connection error in save_transcript_config: {str(e)}", exc_info=True)
             raise
@@ -713,16 +730,16 @@ class DatabaseManager:
             api_key_name = "groqApiKey"
         elif provider == "openai":
             api_key_name = "openaiApiKey"
-            
+
         try:
             async with self._get_connection() as conn:
                 await conn.execute("BEGIN TRANSACTION")
-                
+
                 try:
                     # Check if transcript settings row exists
                     cursor = await conn.execute("SELECT id FROM transcript_settings WHERE id = '1'")
                     existing_config = await cursor.fetchone()
-                    
+
                     if existing_config:
                         # Update existing configuration
                         await conn.execute(f"UPDATE transcript_settings SET {api_key_name} = ? WHERE id = '1'", (api_key,))
@@ -732,15 +749,15 @@ class DatabaseManager:
                             INSERT INTO transcript_settings (id, provider, model, {api_key_name})
                             VALUES (?, ?, ?, ?)
                         """, ('1', 'localWhisper', 'large-v3', api_key))
-                        
+
                     await conn.commit()
                     logger.info(f"Successfully saved transcript API key for provider: {provider}")
-                    
+
                 except Exception as e:
                     await conn.rollback()
                     logger.error(f"Failed to save transcript API key for provider {provider}: {str(e)}", exc_info=True)
                     raise
-                    
+
         except Exception as e:
             logger.error(f"Database connection error in save_transcript_api_key: {str(e)}", exc_info=True)
             raise
@@ -770,10 +787,10 @@ class DatabaseManager:
         """Search through meeting transcripts for the given query"""
         if not query or query.strip() == "":
             return []
-            
+
         # Convert query to lowercase for case-insensitive search
         search_query = f"%{query.lower()}%"
-        
+
         try:
             async with self._get_connection() as conn:
                 # Search in transcripts table
@@ -784,9 +801,9 @@ class DatabaseManager:
                     WHERE LOWER(t.transcript) LIKE ?
                     ORDER BY m.created_at DESC
                 """, (search_query,))
-                
+
                 rows = await cursor.fetchall()
-                
+
                 # Also search in transcript_chunks for full transcripts
                 cursor2 = await conn.execute("""
                     SELECT m.id, m.title, tc.transcript_text
@@ -796,70 +813,70 @@ class DatabaseManager:
                     AND m.id NOT IN (SELECT DISTINCT meeting_id FROM transcripts WHERE LOWER(transcript) LIKE ?)
                     ORDER BY m.created_at DESC
                 """, (search_query, search_query))
-                
+
                 chunk_rows = await cursor2.fetchall()
-                
+
                 # Format the results
                 results = []
-                
+
                 # Process transcript matches
                 for row in rows:
                     meeting_id, title, transcript, timestamp = row
-                    
+
                     # Find the matching context (snippet around the match)
                     transcript_lower = transcript.lower()
                     match_index = transcript_lower.find(query.lower())
-                    
+
                     # Extract context around the match (100 chars before and after)
                     start_index = max(0, match_index - 100)
                     end_index = min(len(transcript), match_index + len(query) + 100)
                     context = transcript[start_index:end_index]
-                    
+
                     # Add ellipsis if we truncated the text
                     if start_index > 0:
                         context = "..." + context
                     if end_index < len(transcript):
                         context += "..."
-                    
+
                     results.append({
                         'id': meeting_id,
                         'title': title,
                         'matchContext': context,
                         'timestamp': timestamp
                     })
-                
+
                 # Process transcript_chunks matches
                 for row in chunk_rows:
                     meeting_id, title, transcript_text = row
-                    
+
                     # Find the matching context (snippet around the match)
                     transcript_lower = transcript_text.lower()
                     match_index = transcript_lower.find(query.lower())
-                    
+
                     # Extract context around the match (100 chars before and after)
                     start_index = max(0, match_index - 100)
                     end_index = min(len(transcript_text), match_index + len(query) + 100)
                     context = transcript_text[start_index:end_index]
-                    
+
                     # Add ellipsis if we truncated the text
                     if start_index > 0:
                         context = "..." + context
                     if end_index < len(transcript_text):
                         context += "..."
-                    
+
                     results.append({
                         'id': meeting_id,
                         'title': title,
                         'matchContext': context,
                         'timestamp': datetime.utcnow().isoformat()  # Use current time as fallback
                     })
-                
+
                 return results
-                
+
         except Exception as e:
             logger.error(f"Error searching transcripts: {str(e)}")
             raise
-        
+
     async def delete_api_key(self, provider: str):
         """Delete the API key"""
         provider_list = ["openai", "claude", "groq", "ollama"]
@@ -876,7 +893,7 @@ class DatabaseManager:
         async with self._get_connection() as conn:
             await conn.execute(f"UPDATE settings SET {api_key_name} = NULL WHERE id = '1'")
             await conn.commit()
-    
+
     async def update_meeting_summary(self, meeting_id: str, summary: dict):
         """Update a meeting's summary"""
         now = datetime.utcnow().isoformat()
@@ -885,29 +902,75 @@ class DatabaseManager:
                 # Check if the meeting exists
                 cursor = await conn.execute("SELECT id FROM meetings WHERE id = ?", (meeting_id,))
                 meeting = await cursor.fetchone()
-                
+
                 if not meeting:
                     raise ValueError(f"Meeting with ID {meeting_id} not found")
-                
+
                 # Update the summary in the summary_processes table
                 await conn.execute("""
                     UPDATE summary_processes
                     SET result = ?, updated_at = ?
                     WHERE meeting_id = ?
                 """, (json.dumps(summary), now, meeting_id))
-                
+
                 # Update the meeting's updated_at timestamp
                 await conn.execute("""
                     UPDATE meetings
                     SET updated_at = ?
                     WHERE id = ?
                 """, (now, meeting_id))
-                
+
                 await conn.commit()
                 return True
         except Exception as e:
             logger.error(f"Error updating meeting summary: {str(e)}")
             raise
 
-   
+    async def get_language_preference(self) -> str:
+        """Get the stored language preference, returns 'ru' as default"""
+        try:
+            async with self._get_connection() as conn:
+                cursor = await conn.execute(
+                    "SELECT language_code FROM user_preferences WHERE id = '1'"
+                )
+                row = await cursor.fetchone()
+
+                if row and row[0]:
+                    return row[0]
+
+                # If no preference exists, return Russian as default
+                return 'ru'
+        except Exception as e:
+            logger.error(f"Error getting language preference: {str(e)}")
+            return 'ru'  # Return default on error
+
+    async def set_language_preference(self, language_code: str) -> bool:
+        """Set the language preference"""
+        now = datetime.utcnow().isoformat()
+        try:
+            async with self._get_connection() as conn:
+                # Check if preference record exists
+                cursor = await conn.execute(
+                    "SELECT id FROM user_preferences WHERE id = '1'"
+                )
+                existing = await cursor.fetchone()
+
+                if existing:
+                    # Update existing record
+                    await conn.execute(
+                        "UPDATE user_preferences SET language_code = ?, updated_at = ? WHERE id = '1'",
+                        (language_code, now)
+                    )
+                else:
+                    # Insert new record
+                    await conn.execute(
+                        "INSERT INTO user_preferences (id, language_code, created_at, updated_at) VALUES ('1', ?, ?, ?)",
+                        (language_code, now, now)
+                    )
+
+                await conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error setting language preference: {str(e)}")
+            raise
 

@@ -132,7 +132,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   });
 
   // Language preference state
-  const [selectedLanguage, setSelectedLanguage] = useState('auto-translate');
+  const [selectedLanguage, setSelectedLanguage] = useState('ru');
 
   // UI preferences state
   const [showConfidenceIndicator, setShowConfidenceIndicator] = useState<boolean>(() => {
@@ -347,9 +347,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
           console.log('Loaded language preference:', language);
         }
       } catch (error) {
-        console.log('No language preference found or failed to load, using default (auto-translate):', error);
-        // Default to 'auto-translate' (Auto Detect with English translation) if no preference is saved
-        setSelectedLanguage('auto-translate');
+        console.log('No language preference found or failed to load, using default (Russian):', error);
+        // Default to 'ru' (Russian) if no preference is saved
+        setSelectedLanguage('ru');
       }
     };
     loadLanguagePreference();

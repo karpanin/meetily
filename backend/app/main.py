@@ -220,11 +220,11 @@ async def process_transcript_background(process_id: str, transcript: TranscriptR
     """Background task to process transcript"""
     try:
         logger.info(f"Starting background processing for process_id: {process_id}")
-        
+
         # Early validation for common issues
         if not transcript.text or not transcript.text.strip():
             raise ValueError("Empty transcript text provided")
-        
+
         if transcript.model in ["claude", "groq", "openai"]:
             # Check if API key is available for cloud providers
             api_key = await processor.db.get_api_key(transcript.model)
@@ -285,7 +285,7 @@ async def process_transcript_background(process_id: str, transcript: TranscriptR
                                     section["blocks"].extend(json_dict[key]["blocks"])
                                     section_exists = True
                                     break
-                            
+
                             if not section_exists:
                                 final_summary["MeetingNotes"]["sections"].append({
                                     "title": json_dict[key]["title"],
@@ -428,7 +428,7 @@ async def get_summary(meeting_id: str):
             for backend_key, frontend_key in section_mapping.items():
                 if backend_key in summary_data and isinstance(summary_data[backend_key], dict):
                     transformed_data[frontend_key] = summary_data[backend_key]
-            
+
             # Add meeting notes sections if available - PRESERVE ORDER AND HANDLE DUPLICATES
             if "MeetingNotes" in summary_data and isinstance(summary_data["MeetingNotes"], dict):
                 meeting_notes = summary_data["MeetingNotes"]
@@ -436,21 +436,21 @@ async def get_summary(meeting_id: str):
                     # Add section order array to maintain order
                     transformed_data["_section_order"] = []
                     used_keys = set()
-                    
+
                     for index, section in enumerate(meeting_notes["sections"]):
                         if isinstance(section, dict) and "title" in section and "blocks" in section:
                             # Ensure blocks is a list to prevent frontend errors
                             if not isinstance(section.get("blocks"), list):
                                 section["blocks"] = []
-                                
+
                             # Convert title to snake_case key
                             base_key = section["title"].lower().replace(" & ", "_").replace(" ", "_")
-                            
+
                             # Handle duplicate section names by adding index
                             key = base_key
                             if key in used_keys:
                                 key = f"{base_key}_{index}"
-                            
+
                             used_keys.add(key)
                             transformed_data[key] = section
                             # Only add to _section_order if the section was successfully added
@@ -563,7 +563,7 @@ async def save_model_config(request: SaveModelConfigRequest):
     await db.save_model_config(request.provider, request.model, request.whisperModel)
     if request.apiKey != None:
         await db.save_api_key(request.apiKey, request.provider)
-    return {"status": "success", "message": "Model configuration saved successfully"}  
+    return {"status": "success", "message": "Model configuration saved successfully"}
 
 @app.get("/get-transcript-config")
 async def get_transcript_config():
@@ -628,6 +628,35 @@ async def search_transcripts(request: SearchRequest):
         return JSONResponse(content=results)
     except Exception as e:
         logger.error(f"Error searching transcripts: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class LanguagePreferenceRequest(BaseModel):
+    language_code: str
+
+@app.post("/api/language-preference")
+async def set_language_preference(request: LanguagePreferenceRequest):
+    """Save the user's language preference"""
+    try:
+        if not request.language_code or len(request.language_code) == 0:
+            raise ValueError("language_code cannot be empty")
+
+        await db.set_language_preference(request.language_code)
+        return {"message": "Language preference saved successfully", "language_code": request.language_code}
+    except ValueError as ve:
+        logger.error(f"Value error setting language preference: {str(ve)}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error setting language preference: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/language-preference")
+async def get_language_preference():
+    """Get the user's language preference (defaults to 'ru' if not set)"""
+    try:
+        language_code = await db.get_language_preference()
+        return {"language_code": language_code}
+    except Exception as e:
+        logger.error(f"Error getting language preference: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.on_event("shutdown")
