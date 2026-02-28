@@ -55,7 +55,7 @@ pub async fn save_language_preference<R: Runtime>(
 ) -> Result<()> {
     let store = app.store("language_preference.json")?;
 
-    store.set("language_code", language_code)?;
+    store.set("language_code", language_code);
 
     // Explicitly save to ensure persistence
     store.save()?;
