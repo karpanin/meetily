@@ -64,7 +64,6 @@ CREATE TABLE IF NOT EXISTS transcript_settings (
     id TEXT PRIMARY KEY,
     provider TEXT NOT NULL,
     model TEXT NOT NULL,
-    diarizationEnabled INTEGER DEFAULT 0,
     whisperApiKey TEXT,
     deepgramApiKey TEXT,
     elevenLabsApiKey TEXT,
